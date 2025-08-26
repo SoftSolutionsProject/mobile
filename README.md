@@ -1,4 +1,4 @@
-# 📚 Plataforma de Cursos Online
+# 📚 Soft Solutions
 
 Este projeto tem como objetivo desenvolver uma plataforma de cursos online, oferecendo aos usuários funcionalidades de cadastro, acesso a conteúdos educacionais, acompanhamento de progresso, emissão de certificados e muito mais.
 
