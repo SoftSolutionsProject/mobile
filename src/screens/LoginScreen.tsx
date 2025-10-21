@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -17,15 +18,18 @@ import { RootStackParamList } from '../types';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const LoginScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
+  const { login, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const validateForm = () => {
     if (!email.trim()) {
@@ -43,20 +47,30 @@ const LoginScreen: React.FC = () => {
     return true;
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setErrorMessage('');
     
     if (!validateForm()) {
       return;
     }
 
-    // Mock login - em produção seria uma chamada à API
-    if (email === 'admin@test.com' && senha === '123456') {
+    try {
+      setIsLoggingIn(true);
+      await login(email, senha);
       Alert.alert('Sucesso', 'Login realizado com sucesso!', [
         { text: 'OK', onPress: () => navigation.navigate('Dashboard') }
       ]);
-    } else {
-      setErrorMessage('Email ou senha incorretos');
+    } catch (error: any) {
+      console.error('Erro no login:', error);
+      if (error.response?.status === 401) {
+        setErrorMessage('Email ou senha incorretos');
+      } else if (error.response?.status === 400) {
+        setErrorMessage('Dados inválidos. Verifique suas informações.');
+      } else {
+        setErrorMessage('Erro ao fazer login. Tente novamente.');
+      }
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -127,8 +141,16 @@ const LoginScreen: React.FC = () => {
                     <Text style={styles.errorText}>{errorMessage}</Text>
                   ) : null}
 
-                  <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-                    <Text style={styles.loginButtonText}>Entrar</Text>
+                  <TouchableOpacity 
+                    style={[styles.loginButton, isLoggingIn && styles.loginButtonDisabled]} 
+                    onPress={handleLogin}
+                    disabled={isLoggingIn}
+                  >
+                    {isLoggingIn ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.loginButtonText}>Entrar</Text>
+                    )}
                   </TouchableOpacity>
 
                   <View style={styles.linksContainer}>
@@ -261,6 +283,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  loginButtonDisabled: {
+    opacity: 0.7,
   },
   linksContainer: {
     alignItems: 'center',

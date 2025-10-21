@@ -9,12 +9,14 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const Footer: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute();
+  const { user } = useAuth();
 
   const navigateToScreen = (screenName: keyof RootStackParamList, params?: any) => {
     navigation.navigate(screenName as any, params);
@@ -80,7 +82,7 @@ const Footer: React.FC = () => {
         
         <TouchableOpacity 
           style={[styles.footerItem, isActive('Profile') && styles.activeFooterItem]}
-          onPress={() => navigateToScreen('Profile', { userId: '1' })}
+          onPress={() => navigateToScreen('Profile', { userId: user?.id || '1' })}
         >
           <Ionicons 
             name="person" 

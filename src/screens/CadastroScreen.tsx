@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -23,6 +24,7 @@ import {
   validatePassword,
   unformatCPF 
 } from '../utils/validations';
+import ApiService from '../services/ApiService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -36,6 +38,7 @@ const CadastroScreen: React.FC = () => {
   });
   const [errorMessage, setErrorMessage] = useState('');
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   const validateForm = () => {
     setErrorMessage('');
@@ -113,17 +116,39 @@ const CadastroScreen: React.FC = () => {
     }
   };
 
-  const handleCadastro = () => {
+  const handleCadastro = async () => {
     setErrorMessage('');
     
     if (!validateForm()) {
       return;
     }
 
-    // Mock cadastro - em produção seria uma chamada à API
-    Alert.alert('Sucesso', 'Cadastro realizado com sucesso!', [
-      { text: 'OK', onPress: () => navigation.navigate('Login') }
-    ]);
+    try {
+      setIsRegistering(true);
+      const cleanCPF = unformatCPF(formData.cpfUsuario);
+      const userData = {
+        nomeUsuario: formData.nomeUsuario.trim(),
+        email: formData.email.trim(),
+        senha: formData.senha,
+        cpfUsuario: cleanCPF,
+      };
+      
+      await ApiService.cadastrarUsuario(userData);
+      Alert.alert('Sucesso', 'Cadastro realizado com sucesso!', [
+        { text: 'OK', onPress: () => navigation.navigate('Login') }
+      ]);
+    } catch (error: any) {
+      console.error('Erro no cadastro:', error);
+      if (error.response?.status === 400) {
+        setErrorMessage('Dados inválidos. Verifique suas informações.');
+      } else if (error.response?.status === 409) {
+        setErrorMessage('Email ou CPF já cadastrado.');
+      } else {
+        setErrorMessage('Erro ao realizar cadastro. Tente novamente.');
+      }
+    } finally {
+      setIsRegistering(false);
+    }
   };
 
   return (
@@ -209,8 +234,16 @@ const CadastroScreen: React.FC = () => {
                     <Text style={styles.errorText}>{errorMessage}</Text>
                   ) : null}
 
-                  <TouchableOpacity style={styles.cadastroButton} onPress={handleCadastro}>
-                    <Text style={styles.cadastroButtonText}>Cadastrar</Text>
+                  <TouchableOpacity 
+                    style={[styles.cadastroButton, isRegistering && styles.cadastroButtonDisabled]} 
+                    onPress={handleCadastro}
+                    disabled={isRegistering}
+                  >
+                    {isRegistering ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.cadastroButtonText}>Cadastrar</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -312,6 +345,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  cadastroButtonDisabled: {
+    opacity: 0.7,
   },
 });
 

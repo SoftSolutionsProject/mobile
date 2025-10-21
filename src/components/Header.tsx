@@ -8,11 +8,13 @@ import {
   Modal,
   ScrollView,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -23,8 +25,8 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ showBackButton = false, title }) => {
   const navigation = useNavigation<NavigationProp>();
+  const { isAuthenticated, user, logout } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false); // Mock - em produção viria do contexto de auth
 
   const toggleMenu = () => {
     setMenuVisible(!menuVisible);
@@ -35,10 +37,30 @@ const Header: React.FC<HeaderProps> = ({ showBackButton = false, title }) => {
     navigation.navigate(screenName, params);
   };
 
-  const logout = () => {
-    setIsLoggedIn(false);
-    setMenuVisible(false);
-    navigation.navigate('Home');
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Tem certeza que deseja sair?',
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Sair',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+              setMenuVisible(false);
+              navigation.navigate('Home');
+            } catch (error) {
+              console.error('Erro ao fazer logout:', error);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -114,14 +136,25 @@ const Header: React.FC<HeaderProps> = ({ showBackButton = false, title }) => {
                 <Text style={styles.menuItemText}>Certificados</Text>
               </TouchableOpacity>
               
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => navigateToScreen('Profile', { userId: '1' })}
-              >
-                <Text style={styles.menuItemText}>Perfil</Text>
-              </TouchableOpacity>
+              {isAuthenticated && (
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('Profile', { userId: user?.id || '1' })}
+                >
+                  <Text style={styles.menuItemText}>Perfil</Text>
+                </TouchableOpacity>
+              )}
               
-              {!isLoggedIn ? (
+              {isAuthenticated && (
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('Dashboard')}
+                >
+                  <Text style={styles.menuItemText}>Dashboard</Text>
+                </TouchableOpacity>
+              )}
+              
+              {!isAuthenticated ? (
                 <>
                   <TouchableOpacity
                     style={styles.menuItem}
@@ -140,7 +173,7 @@ const Header: React.FC<HeaderProps> = ({ showBackButton = false, title }) => {
               ) : (
                 <TouchableOpacity
                   style={styles.menuItem}
-                  onPress={logout}
+                  onPress={handleLogout}
                 >
                   <Text style={styles.menuItemText}>Logout</Text>
                 </TouchableOpacity>

@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { RootStackParamList } from '../types';
+import AuthGuard from '../guards/AuthGuard';
 
 // Import screens
 import HomeScreen from '../screens/HomeScreen';
@@ -38,8 +39,20 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="CursosLista" component={CursosListaScreen} />
         <Stack.Screen name="DetalhesCurso" component={DetalhesCursoScreen} />
         <Stack.Screen name="AulasCurso" component={AulasCursoScreen} />
-        <Stack.Screen name="Dashboard" component={DashboardScreen} />
-        <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen name="Dashboard">
+          {() => (
+            <AuthGuard>
+              <DashboardScreen />
+            </AuthGuard>
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="Profile">
+          {() => (
+            <AuthGuard>
+              <ProfileScreen />
+            </AuthGuard>
+          )}
+        </Stack.Screen>
       </Stack.Navigator>
     </NavigationContainer>
   );

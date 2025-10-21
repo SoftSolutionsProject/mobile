@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -13,43 +14,45 @@ import { RootStackParamList, DashboardData } from '../types';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Ionicons } from '@expo/vector-icons';
+import ApiService from '../services/ApiService';
+import { useAuth } from '../contexts/AuthContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
+  const { user, isAuthenticated } = useAuth();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Mock data - em produção viria da API
   useEffect(() => {
-    const loadDashboardData = async () => {
-      try {
-        setLoading(true);
-        // Simular carregamento
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const mockData: DashboardData = {
-          totalCursosInscritos: 5,
-          totalCertificados: 3,
-          tempoTotalEstudoMinutos: 1250,
-          diasAtivosEstudo: 45,
-          ultimoDiaAtividade: '2024-01-20',
-          diasConsecutivosEstudo: 7,
-          sequenciaAtualDiasConsecutivos: 3,
-        };
-        
-        setDashboardData(mockData);
-      } catch (err) {
-        setError('Erro ao carregar dados do dashboard');
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (isAuthenticated && user) {
+      loadDashboardData();
+    } else {
+      setLoading(false);
+      setError('Usuário não autenticado');
+    }
+  }, [isAuthenticated, user]);
 
-    loadDashboardData();
-  }, []);
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      if (!user) {
+        throw new Error('Usuário não encontrado');
+      }
+      
+      const data = await ApiService.getDashboard(parseInt(user.id));
+      setDashboardData(data);
+    } catch (err: any) {
+      console.error('Erro ao carregar dashboard:', err);
+      setError('Erro ao carregar dados do dashboard');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const formatTime = (minutes: number) => {
     const hours = Math.floor(minutes / 60);
@@ -86,6 +89,7 @@ const DashboardScreen: React.FC = () => {
       <View style={styles.container}>
         <Header showBackButton title="Dashboard" />
         <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4a9eff" />
           <Text style={styles.loadingText}>Carregando dashboard...</Text>
         </View>
         <Footer />
@@ -206,7 +210,7 @@ const DashboardScreen: React.FC = () => {
               
               <TouchableOpacity
                 style={styles.actionCard}
-                onPress={() => navigation.navigate('Profile', { userId: '1' })}
+                onPress={() => navigation.navigate('Profile', { userId: user?.id || '1' })}
               >
                 <Ionicons name="person" size={24} color="#125887" />
                 <Text style={styles.actionText}>Meu Perfil</Text>

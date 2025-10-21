@@ -12,10 +12,12 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList, User } from '../types';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Ionicons } from '@expo/vector-icons';
+import ProfileImageService from '../services/ProfileImageService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'Profile'>;
@@ -33,6 +35,7 @@ const ProfileScreen: React.FC = () => {
     cpfUsuario: '',
   });
   const [loading, setLoading] = useState(true);
+  const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
 
   // Mock data - em produção viria da API baseado no userId
   useEffect(() => {
@@ -48,6 +51,13 @@ const ProfileScreen: React.FC = () => {
           email: 'joao.silva@email.com',
           cpfUsuario: '12345678901',
         };
+        
+        // Carregar imagem de perfil do banco local
+        const savedImageUri = await ProfileImageService.getProfileImage(userId);
+        if (savedImageUri) {
+          mockUser.profileImageUri = savedImageUri;
+          setProfileImageUri(savedImageUri);
+        }
         
         setUser(mockUser);
         setEditData({
@@ -126,6 +136,85 @@ const ProfileScreen: React.FC = () => {
     );
   };
 
+  const requestImagePickerPermission = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permissão necessária',
+        'Precisamos de permissão para acessar sua galeria de fotos.',
+        [{ text: 'OK' }]
+      );
+      return false;
+    }
+    return true;
+  };
+
+  const pickImage = async () => {
+    const hasPermission = await requestImagePickerPermission();
+    if (!hasPermission) return;
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const imageUri = result.assets[0].uri;
+        await ProfileImageService.saveProfileImage(userId, imageUri);
+        setProfileImageUri(imageUri);
+        
+        // Atualizar o objeto user com a nova imagem
+        if (user) {
+          setUser({
+            ...user,
+            profileImageUri: imageUri,
+          });
+        }
+        
+        Alert.alert('Sucesso', 'Imagem de perfil atualizada com sucesso!');
+      }
+    } catch (error) {
+      console.error('Erro ao selecionar imagem:', error);
+      Alert.alert('Erro', 'Erro ao selecionar imagem. Tente novamente.');
+    }
+  };
+
+  const removeProfileImage = async () => {
+    Alert.alert(
+      'Remover Imagem',
+      'Tem certeza que deseja remover sua imagem de perfil?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ProfileImageService.deleteProfileImage(userId);
+              setProfileImageUri(null);
+              
+              // Atualizar o objeto user removendo a imagem
+              if (user) {
+                setUser({
+                  ...user,
+                  profileImageUri: undefined,
+                });
+              }
+              
+              Alert.alert('Sucesso', 'Imagem de perfil removida com sucesso!');
+            } catch (error) {
+              console.error('Erro ao remover imagem:', error);
+              Alert.alert('Erro', 'Erro ao remover imagem. Tente novamente.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const formatCPF = (cpf: string) => {
     return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   };
@@ -151,12 +240,27 @@ const ProfileScreen: React.FC = () => {
           <View style={styles.profileHeader}>
             <View style={styles.avatarContainer}>
               <Image
-                source={require('../assets/images/perfil.png')}
+                source={
+                  profileImageUri 
+                    ? { uri: profileImageUri }
+                    : require('../assets/images/perfil.png')
+                }
                 style={styles.avatar}
               />
-              <TouchableOpacity style={styles.editAvatarButton}>
+              <TouchableOpacity 
+                style={styles.editAvatarButton}
+                onPress={pickImage}
+              >
                 <Ionicons name="camera" size={16} color="#fff" />
               </TouchableOpacity>
+              {profileImageUri && (
+                <TouchableOpacity 
+                  style={styles.removeAvatarButton}
+                  onPress={removeProfileImage}
+                >
+                  <Ionicons name="close" size={12} color="#fff" />
+                </TouchableOpacity>
+              )}
             </View>
             <Text style={styles.userName}>{user?.nomeUsuario}</Text>
             <Text style={styles.userEmail}>{user?.email}</Text>
@@ -377,6 +481,17 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeAvatarButton: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#e74c3c',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },

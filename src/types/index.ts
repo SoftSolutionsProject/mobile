@@ -3,6 +3,7 @@ export interface User {
   nomeUsuario: string;
   email: string;
   cpfUsuario: string;
+  profileImageUri?: string;
 }
 
 export interface Course {

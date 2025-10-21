@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -14,50 +15,84 @@ import { RootStackParamList, Course } from '../types';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Ionicons } from '@expo/vector-icons';
+import ApiService from '../services/ApiService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
+  const [featuredCourses, setFeaturedCourses] = useState<Course[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const featuredCourses: Course[] = [
-    {
-      id: '13',
-      title: 'Fundamentos em Python',
-      description: 'Estude os principais fundamentos da linguagem Python.',
-      image: require('../assets/images/cursos/python.png'),
-      instructor: 'Dilermando Piva',
-      instructorImage: require('../assets/images/perfil.png'),
-      duration: '10h',
-      modules: 8,
-      level: 'Iniciante',
-      rating: 4.8,
-    },
-    {
-      id: '2',
-      title: 'Introdução ao React Native Para Mobile',
-      description: 'Crie aplicativos iOS e Android com React Native',
-      image: require('../assets/images/cursos/desenvolvimento-apps.jpg'),
-      instructor: 'Marcos Andrade',
-      instructorImage: require('../assets/images/perfil.png'),
-      duration: '50h',
-      modules: 5,
-      level: 'Intermediário',
-      rating: 4.9,
-    },
-    {
-      id: '12',
-      title: 'JavaScript Avançado para Web',
-      description: 'Análise de dados, machine learning e visualização com Python',
-      image: require('../assets/images/cursos/desenvolvimento-web.jpg'),
-      instructor: 'Camila Oliveira',
-      instructorImage: require('../assets/images/perfil.png'),
-      duration: '55h',
-      modules: 5,
-      level: 'Avançado',
-      rating: 4.7,
-    },
-  ];
+  useEffect(() => {
+    loadCourses();
+  }, []);
+
+  const loadCourses = async () => {
+    try {
+      setIsLoading(true);
+      const courses = await ApiService.listarCursos();
+      
+      // Transformar os dados da API para o formato esperado pelo componente
+      const transformedCourses: Course[] = courses.slice(0, 3).map((course: any) => ({
+        id: course.id.toString(),
+        title: course.nomeCurso,
+        description: course.descricaoCurso || 'Descrição não disponível',
+        image: require('../assets/images/cursos/python.png'), // Imagem padrão
+        instructor: course.instrutor || 'Instrutor',
+        instructorImage: require('../assets/images/perfil.png'),
+        duration: `${course.tempoCurso || 0}h`,
+        modules: course.modulos?.length || 0,
+        level: course.nivel || 'Iniciante',
+        rating: course.avaliacao || 4.5,
+      }));
+      
+      setFeaturedCourses(transformedCourses);
+    } catch (error) {
+      console.error('Erro ao carregar cursos:', error);
+      // Fallback para cursos mock em caso de erro
+      setFeaturedCourses([
+        {
+          id: '13',
+          title: 'Fundamentos em Python',
+          description: 'Estude os principais fundamentos da linguagem Python.',
+          image: require('../assets/images/cursos/python.png'),
+          instructor: 'Dilermando Piva',
+          instructorImage: require('../assets/images/perfil.png'),
+          duration: '10h',
+          modules: 8,
+          level: 'Iniciante',
+          rating: 4.8,
+        },
+        {
+          id: '2',
+          title: 'Introdução ao React Native Para Mobile',
+          description: 'Crie aplicativos iOS e Android com React Native',
+          image: require('../assets/images/cursos/desenvolvimento-apps.jpg'),
+          instructor: 'Marcos Andrade',
+          instructorImage: require('../assets/images/perfil.png'),
+          duration: '50h',
+          modules: 5,
+          level: 'Intermediário',
+          rating: 4.9,
+        },
+        {
+          id: '12',
+          title: 'JavaScript Avançado para Web',
+          description: 'Análise de dados, machine learning e visualização com Python',
+          image: require('../assets/images/cursos/desenvolvimento-web.jpg'),
+          instructor: 'Camila Oliveira',
+          instructorImage: require('../assets/images/perfil.png'),
+          duration: '55h',
+          modules: 5,
+          level: 'Avançado',
+          rating: 4.7,
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const features = [
     {
@@ -187,14 +222,21 @@ const HomeScreen: React.FC = () => {
               <Ionicons name="arrow-forward" size={16} color="#4a9eff" />
             </TouchableOpacity>
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.coursesScrollView}
-            contentContainerStyle={styles.coursesContainer}
-          >
-            {featuredCourses.map(renderCourseCard)}
-          </ScrollView>
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#4a9eff" />
+              <Text style={styles.loadingText}>Carregando cursos...</Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.coursesScrollView}
+              contentContainerStyle={styles.coursesContainer}
+            >
+              {featuredCourses.map(renderCourseCard)}
+            </ScrollView>
+          )}
         </View>
 
         {/* Features Section */}
@@ -479,6 +521,15 @@ const styles = StyleSheet.create({
     color: '#666666',
     textAlign: 'center',
     lineHeight: 15,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    color: '#4a9eff',
+    fontSize: 14,
+    marginTop: 10,
   },
 });
 
