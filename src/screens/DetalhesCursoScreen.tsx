@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -8,240 +8,364 @@ import {
   Image,
   Alert,
   Dimensions,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList, CourseDetails, Review } from '../types';
+import { Ionicons } from '@expo/vector-icons';
+
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { Ionicons } from '@expo/vector-icons';
+import ApiService from '../services/ApiService';
+import NotificationService from '../services/NotificationService';
+import { CourseDetails, Enrollment, Review, RootStackParamList } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'DetalhesCurso'>;
+
+const placeholderCourseImage = require('../assets/images/cursos/desenvolvimento-web.jpg');
+const placeholderInstructorImage = require('../assets/images/perfil.png');
 
 const DetalhesCursoScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RoutePropType>();
   const { courseId } = route.params;
-  
-  const [isEnrolled, setIsEnrolled] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const { isAuthenticated } = useAuth();
 
-  // Mock data - em produção viria da API baseado no courseId
-  const course: CourseDetails = {
-    id: courseId,
-    title: 'Fundamentos em Python',
-    nomeCurso: 'Fundamentos em Python',
-    description: 'Aprenda os conceitos básicos da linguagem Python e suas aplicações.',
-    descricaoDetalhada: 'Este curso abrange desde os conceitos básicos até tópicos intermediários da linguagem Python. Você aprenderá sobre variáveis, estruturas de controle, funções, classes e muito mais. Ideal para iniciantes que desejam começar sua jornada na programação.',
-    image: require('../assets/images/cursos/python.png'),
-    instructor: 'Dilermando Piva',
-    instructorImage: require('../assets/images/perfil.png'),
-    duration: '10h',
-    tempoCurso: 10,
-    modules: 8,
-    level: 'Iniciante',
-    rating: 4.8,
-    avaliacao: 4.8,
-    enrolled: isEnrolled,
-    modulos: [
-      {
-        nomeModulo: 'Introdução ao Python',
-        aulas: [
-          { nomeAula: 'O que é Python?', duracao: '15 min' },
-          { nomeAula: 'Instalação e Configuração', duracao: '20 min' },
-          { nomeAula: 'Primeiro Programa', duracao: '10 min' },
-        ],
-      },
-      {
-        nomeModulo: 'Variáveis e Tipos de Dados',
-        aulas: [
-          { nomeAula: 'Números e Strings', duracao: '25 min' },
-          { nomeAula: 'Listas e Tuplas', duracao: '30 min' },
-          { nomeAula: 'Dicionários', duracao: '25 min' },
-        ],
-      },
-      {
-        nomeModulo: 'Estruturas de Controle',
-        aulas: [
-          { nomeAula: 'Condicionais (if/else)', duracao: '20 min' },
-          { nomeAula: 'Loops (for/while)', duracao: '30 min' },
-          { nomeAula: 'Exercícios Práticos', duracao: '40 min' },
-        ],
-      },
-    ],
+  const [course, setCourse] = useState<CourseDetails | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isEnrolling, setIsEnrolling] = useState<boolean>(false);
+  const [quantityEnrolled, setQuantityEnrolled] = useState<number>(0);
+
+  const isEnrolled = useMemo(() => {
+    return enrollments.some(
+      (enrollment) =>
+        enrollment.curso.id === Number(courseId) && enrollment.status === 'ativo',
+    );
+  }, [enrollments, courseId]);
+
+  useEffect(() => {
+    loadData();
+  }, [courseId]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadEnrollments();
+    } else {
+      setEnrollments([]);
+    }
+  }, [isAuthenticated, courseId]);
+
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      const [courseResponse, countResponse, reviewsResponse] = await Promise.all([
+        ApiService.obterCurso(Number(courseId)),
+        ApiService.obterQuantidadeInscritos(Number(courseId)),
+        ApiService.listarAvaliacoesPorCurso(Number(courseId)),
+      ]);
+
+      setCourse(courseResponse);
+      setQuantityEnrolled(countResponse?.quantidadeInscritos ?? 0);
+      setReviews(reviewsResponse);
+    } catch (error: any) {
+      console.error('Erro ao carregar curso:', error);
+      Alert.alert(
+        'Erro',
+        error?.message || 'Não foi possível carregar as informações do curso.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const reviews: Review[] = [
-    {
-      autor: 'Maria Silva',
-      nota: 5,
-      comentario: 'Excelente curso! O professor explica muito bem e os exercícios são práticos.',
-      data: '2024-01-10',
-    },
-    {
-      autor: 'João Santos',
-      nota: 4,
-      comentario: 'Muito bom para iniciantes. Conteúdo bem estruturado e fácil de acompanhar.',
-      data: '2024-01-15',
-    },
-    {
-      autor: 'Ana Costa',
-      nota: 5,
-      comentario: 'Recomendo! Aprendi muito e já estou aplicando no meu trabalho.',
-      data: '2024-01-20',
-    },
-  ];
+  const loadEnrollments = async () => {
+    try {
+      const response = await ApiService.listarInscricoesUsuario();
+      setEnrollments(response);
+    } catch (error) {
+      console.error('Erro ao carregar inscrições:', error);
+    }
+  };
 
-  const handleEnroll = () => {
-    setIsLoading(true);
-    // Mock inscrição - em produção seria uma chamada à API
-    setTimeout(() => {
-      setIsEnrolled(true);
-      setIsLoading(false);
-      Alert.alert('Sucesso', 'Você foi inscrito no curso!', [
-        { text: 'OK', onPress: () => navigation.navigate('AulasCurso', { courseId }) }
+  const handleEnroll = async () => {
+    if (!isAuthenticated) {
+      Alert.alert('Faça login', 'Você precisa estar logado para se inscrever no curso.', [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Entrar',
+          onPress: () => navigation.navigate('Login'),
+        },
       ]);
-    }, 1000);
+      return;
+    }
+
+    try {
+      setIsEnrolling(true);
+      await ApiService.inscreverUsuario(Number(courseId));
+      NotificationService.showSuccess('Inscrição realizada com sucesso!');
+      await Promise.all([loadEnrollments(), loadData()]);
+      navigation.navigate('AulasCurso', { courseId: String(courseId) });
+    } catch (error: any) {
+      console.error('Erro ao se inscrever:', error);
+      NotificationService.showError(
+        error?.message || 'Não foi possível realizar a inscrição.',
+      );
+    } finally {
+      setIsEnrolling(false);
+    }
   };
 
   const handleCancelEnrollment = () => {
+    const activeEnrollment = enrollments.find(
+      (item) => item.curso.id === Number(courseId) && item.status === 'ativo',
+    );
+
+    if (!activeEnrollment) {
+      return;
+    }
+
     Alert.alert(
-      'Cancelar Inscrição',
-      'Tem certeza que deseja cancelar sua inscrição neste curso?',
+      'Cancelar inscrição',
+      'Tem certeza de que deseja cancelar sua inscrição neste curso?',
       [
         { text: 'Não', style: 'cancel' },
-        { text: 'Sim', onPress: () => setIsEnrolled(false) }
-      ]
+        {
+          text: 'Sim, cancelar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ApiService.cancelarInscricao(activeEnrollment.id);
+              NotificationService.showSuccess('Inscrição cancelada.');
+              await Promise.all([loadEnrollments(), loadData()]);
+            } catch (error: any) {
+              console.error('Erro ao cancelar inscrição:', error);
+              NotificationService.showError(
+                error?.message || 'Não foi possível cancelar a inscrição.',
+              );
+            }
+          },
+        },
+      ],
     );
   };
 
   const handleWatchCourse = () => {
-    navigation.navigate('AulasCurso', { courseId });
+    navigation.navigate('AulasCurso', { courseId: String(courseId) });
   };
 
-  const renderStars = (rating: number) => {
-    const stars = [];
-    for (let i = 1; i <= 5; i++) {
-      stars.push(
-        <Ionicons
-          key={i}
-          name={i <= rating ? 'star' : 'star-outline'}
-          size={16}
-          color={i <= rating ? '#ffc107' : '#ccc'}
-        />
-      );
+  const handleNavigateToReviews = () => {
+    navigation.navigate('AvaliacaoCurso', { courseId: String(courseId) });
+  };
+
+  const handleOpenVideo = (videoUrl?: string | null) => {
+    if (!videoUrl) {
+      NotificationService.showInfo('Vídeo não disponível para esta aula.');
+      return;
     }
-    return stars;
-  };
 
-  const renderModule = (modulo: any, index: number) => (
-    <View key={index} style={styles.module}>
-      <Text style={styles.moduleTitle}>{modulo.nomeModulo}</Text>
-      <View style={styles.lessonsList}>
-        {modulo.aulas.map((aula: any, aulaIndex: number) => (
-          <View key={aulaIndex} style={styles.lesson}>
-            <Ionicons name="play-circle" size={16} color="#125887" />
-            <Text style={styles.lessonName}>{aula.nomeAula}</Text>
-            <Text style={styles.lessonDuration}>{aula.duracao}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
+    let urlToOpen = videoUrl;
+    if (videoUrl.includes('youtube.com/embed/')) {
+      const videoId = videoUrl.split('/embed/')[1]?.split('?')[0];
+      if (videoId) {
+        urlToOpen = `https://www.youtube.com/watch?v=${videoId}`;
+      }
+    }
+
+    Linking.openURL(urlToOpen).catch(() => {
+      NotificationService.showError(
+        'Não foi possível abrir o vídeo. Tente novamente mais tarde.',
+      );
+    });
+  };
 
   const renderReview = (review: Review, index: number) => (
-    <View key={index} style={styles.review}>
+    <View key={`${review.autor}-${index}`} style={styles.reviewCard}>
       <View style={styles.reviewHeader}>
-        <Text style={styles.reviewAuthor}>{review.autor}</Text>
-        <View style={styles.reviewRating}>
-          {renderStars(review.nota)}
+        <Text style={styles.reviewAuthor}>{review.autor ?? 'Aluno'}</Text>
+        <View style={styles.reviewStars}>
+          {Array.from({ length: 5 }).map((_, starIndex) => (
+            <Ionicons
+              key={starIndex}
+              name={starIndex < review.nota ? 'star' : 'star-outline'}
+              size={16}
+              color="#ffc107"
+            />
+          ))}
         </View>
       </View>
-      <Text style={styles.reviewComment}>"{review.comentario}"</Text>
-      <Text style={styles.reviewDate}>
-        {new Date(review.data).toLocaleDateString('pt-BR')}
-      </Text>
+      <Text style={styles.reviewComment}>{review.comentario}</Text>
     </View>
   );
+
+  if (isLoading || !course) {
+    return (
+      <View style={styles.loadingWrapper}>
+        <Header showBackButton title="Detalhes do curso" />
+        <View style={styles.loadingContent}>
+          <ActivityIndicator size="large" color="#4a9eff" />
+          <Text style={styles.loadingText}>Carregando informações do curso...</Text>
+        </View>
+        <Footer />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <Header showBackButton title="Detalhes do Curso" />
+      <Header showBackButton title="Detalhes do curso" />
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
-          {/* Course Header */}
-          <View style={styles.courseHeader}>
-            <View style={styles.courseInfo}>
-              <Text style={styles.courseTitle}>{course.nomeCurso}</Text>
-              <Text style={styles.courseDescription}>{course.descricaoDetalhada}</Text>
-              
-              {/* Course Details */}
-              <View style={styles.courseDetails}>
-                <View style={styles.detailItem}>
-                  <Ionicons name="time" size={20} color="#125887" />
-                  <Text style={styles.detailText}>{course.tempoCurso} horas</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Ionicons name="people" size={20} color="#125887" />
-                  <Text style={styles.detailText}>1.250 inscritos</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Ionicons name="school" size={20} color="#125887" />
-                  <Text style={styles.detailText}>Certificado de conclusão</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Ionicons name="star" size={20} color="#ffc107" />
-                  <Text style={styles.detailText}>Avaliação média: {course.avaliacao}</Text>
+          <View style={styles.courseHeaderCard}>
+            <Image
+              source={
+                course.imagemCurso ? { uri: course.imagemCurso } : placeholderCourseImage
+              }
+              style={styles.headerImage}
+              resizeMode="cover"
+            />
+            <View style={styles.headerInfo}>
+              <View style={styles.headerTitleContainer}>
+                <Text style={styles.courseTitle}>{course.nomeCurso}</Text>
+                <View style={styles.badgeRow}>
+                  <View style={styles.categoryBadge}>
+                    <Text style={styles.categoryBadgeText}>
+                      {course.categoria || 'Curso'}
+                    </Text>
+                  </View>
+                  <View style={styles.badgeItem}>
+                    <Ionicons name="calendar" size={16} color="#4a9eff" />
+                    <Text style={styles.badgeItemText}>
+                      {course.tempoCurso
+                        ? `${course.tempoCurso}h de conteúdo`
+                        : 'Carga horária a definir'}
+                    </Text>
+                  </View>
+                  <View style={styles.badgeItem}>
+                    <Ionicons name="people" size={16} color="#4a9eff" />
+                    <Text style={styles.badgeItemText}>
+                      {quantityEnrolled} aluno{quantityEnrolled === 1 ? '' : 's'}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
-              {/* Action Buttons */}
-              <View style={styles.actionButtons}>
+              <View style={styles.instructorRow}>
+                <Image source={placeholderInstructorImage} style={styles.instructorImage} />
+                <View>
+                  <Text style={styles.instructorLabel}>Instrutor</Text>
+                  <Text style={styles.instructorName}>{course.professor}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.courseDescription}>
+                {course.descricaoDetalhada || course.descricaoCurta}
+              </Text>
+
+              <View style={styles.actionsRow}>
                 {isEnrolled ? (
-                  <View style={styles.enrolledButtons}>
+                  <>
                     <TouchableOpacity
-                      style={styles.cancelButton}
+                      style={[styles.primaryAction, styles.secondaryAction]}
                       onPress={handleCancelEnrollment}
                     >
-                      <Text style={styles.cancelButtonText}>Cancelar inscrição</Text>
+                      <Text style={styles.secondaryActionText}>Cancelar inscrição</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.watchButton}
+                      style={styles.primaryAction}
                       onPress={handleWatchCourse}
                     >
-                      <Text style={styles.watchButtonText}>Assistir curso</Text>
+                      <Text style={styles.primaryActionText}>Acessar aulas</Text>
                     </TouchableOpacity>
-                  </View>
+                  </>
                 ) : (
                   <TouchableOpacity
-                    style={styles.enrollButton}
+                    style={styles.primaryAction}
                     onPress={handleEnroll}
-                    disabled={isLoading}
+                    disabled={isEnrolling}
                   >
-                    <Text style={styles.enrollButtonText}>
-                      {isLoading ? 'Processando...' : 'Inscrever-se'}
+                    <Text style={styles.primaryActionText}>
+                      {isEnrolling ? 'Processando...' : 'Inscrever-se gratuitamente'}
                     </Text>
                   </TouchableOpacity>
                 )}
               </View>
             </View>
-            
           </View>
 
-          {/* Course Curriculum */}
-          <View style={styles.curriculumSection}>
-            <Text style={styles.sectionTitle}>Ementa do Curso</Text>
-            {course.modulos.map(renderModule)}
-          </View>
-
-          {/* Reviews Section */}
-          {reviews.length > 0 && (
-            <View style={styles.reviewsSection}>
-              <Text style={styles.sectionTitle}>Avaliações dos Alunos</Text>
-              {reviews.map(renderReview)}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Ementa do curso</Text>
+              <Text style={styles.sectionSubtitle}>
+                Explore os módulos e aulas disponíveis neste curso.
+              </Text>
             </View>
-          )}
+            {course.modulos.length === 0 ? (
+              <Text style={styles.emptySectionText}>
+                Este curso ainda não possui módulos cadastrados.
+              </Text>
+            ) : (
+              course.modulos.map((modulo) => (
+                <View key={modulo.id} style={styles.moduleCard}>
+                  <View style={styles.moduleHeader}>
+                    <Text style={styles.moduleTitle}>{modulo.nomeModulo}</Text>
+                    <Text style={styles.moduleSubtitle}>
+                      {modulo.aulas.length} aula
+                      {modulo.aulas.length === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                  {modulo.aulas.map((aula) => (
+                    <TouchableOpacity
+                      key={aula.id}
+                      style={styles.lessonRow}
+                      onPress={() => handleOpenVideo(aula.videoUrl)}
+                    >
+                      <View style={styles.lessonInfo}>
+                        <Ionicons name="play-circle" size={20} color="#4a9eff" />
+                        <View style={styles.lessonTextGroup}>
+                          <Text style={styles.lessonTitle}>{aula.nomeAula}</Text>
+                          <Text style={styles.lessonDuration}>
+                            {aula.tempoAula
+                              ? `${aula.tempoAula} minuto${
+                                  aula.tempoAula === 1 ? '' : 's'
+                                }`
+                              : 'Duração não informada'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Ionicons name="open-outline" size={18} color="#4a9eff" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ))
+            )}
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Avaliações dos alunos</Text>
+              {isAuthenticated && (
+                <TouchableOpacity style={styles.evaluateButton} onPress={handleNavigateToReviews}>
+                  <Ionicons name="star" size={16} color="#fff" />
+                  <Text style={styles.evaluateButtonText}>
+                    {isEnrolled ? 'Avaliar curso' : 'Ver minhas avaliações'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {reviews.length === 0 ? (
+              <Text style={styles.emptySectionText}>
+                Este curso ainda não possui avaliações.
+              </Text>
+            ) : (
+              reviews.map(renderReview)
+            )}
+          </View>
         </View>
       </ScrollView>
       <Footer />
@@ -261,174 +385,239 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 20,
+    paddingBottom: 32,
   },
-  courseHeader: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    marginVertical: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  courseInfo: {
+  loadingWrapper: {
     flex: 1,
+    backgroundColor: '#121212',
+  },
+  loadingContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  courseHeaderCard: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginTop: 20,
+    marginBottom: 28,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+  },
+  headerImage: {
+    width: '100%',
+    height: width * 0.45,
+  },
+  headerInfo: {
+    padding: 20,
+    gap: 18,
+  },
+  headerTitleContainer: {
+    gap: 12,
   },
   courseTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#4a9eff',
-    marginBottom: 10,
-  },
-  courseDescription: {
-    fontSize: 16,
-    color: '#666',
-    lineHeight: 24,
-    marginBottom: 20,
-  },
-  courseDetails: {
-    marginBottom: 20,
-  },
-  detailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  detailText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 10,
-  },
-  actionButtons: {
-    marginTop: 20,
-  },
-  enrollButton: {
-    backgroundColor: '#4a9eff',
-    paddingVertical: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  enrollButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    lineHeight: 28,
   },
-  enrolledButtons: {
+  badgeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#e74c3c',
-    paddingVertical: 15,
-    borderRadius: 8,
-    alignItems: 'center',
+  categoryBadge: {
+    backgroundColor: '#4a9eff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
   },
-  cancelButtonText: {
+  categoryBadgeText: {
     color: '#fff',
-    fontSize: 14,
     fontWeight: '600',
+    fontSize: 12,
   },
-  watchButton: {
-    flex: 1,
-    backgroundColor: '#2ecc71',
-    paddingVertical: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  watchButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  curriculumSection: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    marginBottom: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#4a9eff',
-    marginBottom: 20,
-  },
-  module: {
-    marginBottom: 20,
-  },
-  moduleTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4a9eff',
-    marginBottom: 10,
-  },
-  lessonsList: {
-    paddingLeft: 10,
-  },
-  lesson: {
+  badgeItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    gap: 6,
+    backgroundColor: '#2b2b2b',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
   },
-  lessonName: {
-    flex: 1,
+  badgeItemText: {
+    color: '#cfd9ff',
+    fontSize: 12,
+  },
+  instructorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  instructorImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  instructorLabel: {
+    color: '#9dc7ff',
+    fontSize: 12,
+  },
+  instructorName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  courseDescription: {
     fontSize: 14,
-    color: '#666',
-    marginLeft: 10,
+    color: '#d0d0d0',
+    lineHeight: 20,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  primaryAction: {
+    backgroundColor: '#4a9eff',
+    paddingVertical: 14,
+    borderRadius: 14,
+    flex: 1,
+    alignItems: 'center',
+  },
+  primaryActionText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  secondaryAction: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#4a9eff',
+  },
+  secondaryActionText: {
+    color: '#4a9eff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  section: {
+    marginBottom: 28,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: '#a0a0a0',
+    marginTop: 4,
+  },
+  evaluateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#4a9eff',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  evaluateButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  moduleCard: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    marginBottom: 16,
+  },
+  moduleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  moduleTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4a9eff',
+  },
+  moduleSubtitle: {
+    fontSize: 13,
+    color: '#9dc7ff',
+  },
+  lessonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#262626',
+  },
+  lessonInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  lessonTextGroup: {
+    gap: 4,
+  },
+  lessonTitle: {
+    color: '#f0f0f0',
+    fontSize: 14,
+    fontWeight: '500',
   },
   lessonDuration: {
+    color: '#a0a0a0',
     fontSize: 12,
-    color: '#999',
   },
-  reviewsSection: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    marginBottom: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+  emptySectionText: {
+    color: '#c0c0c0',
+    fontSize: 14,
   },
-  review: {
-    marginBottom: 15,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+  reviewCard: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    marginBottom: 12,
   },
   reviewHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 5,
+    marginBottom: 8,
   },
   reviewAuthor: {
-    fontSize: 14,
+    color: '#fff',
     fontWeight: '600',
-    color: '#4a9eff',
   },
-  reviewRating: {
+  reviewStars: {
     flexDirection: 'row',
+    gap: 2,
   },
   reviewComment: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
-    marginBottom: 5,
-  },
-  reviewDate: {
-    fontSize: 12,
-    color: '#999',
+    color: '#d0d0d0',
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
 

@@ -15,6 +15,7 @@ import CertificadosScreen from '../screens/CertificadosScreen';
 import CursosListaScreen from '../screens/CursosListaScreen';
 import DetalhesCursoScreen from '../screens/DetalhesCursoScreen';
 import AulasCursoScreen from '../screens/AulasCursoScreen';
+import AvaliacaoCursoScreen from '../screens/AvaliacaoCursoScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 
@@ -39,6 +40,13 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="CursosLista" component={CursosListaScreen} />
         <Stack.Screen name="DetalhesCurso" component={DetalhesCursoScreen} />
         <Stack.Screen name="AulasCurso" component={AulasCursoScreen} />
+        <Stack.Screen name="AvaliacaoCurso">
+          {() => (
+            <AuthGuard>
+              <AvaliacaoCursoScreen />
+            </AuthGuard>
+          )}
+        </Stack.Screen>
         <Stack.Screen name="Dashboard">
           {() => (
             <AuthGuard>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Toast from 'react-native-toast-message';
 import { AuthProvider } from './src/contexts/AuthContext';
 import AppNavigator from './src/navigation/AppNavigator';
 
@@ -10,6 +11,7 @@ export default function App() {
       <AuthProvider>
         <AppNavigator />
         <StatusBar style="auto" />
+        <Toast />
       </AuthProvider>
     </GestureHandlerRootView>
   );

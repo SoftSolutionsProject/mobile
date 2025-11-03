@@ -3,47 +3,89 @@ export interface User {
   nomeUsuario: string;
   email: string;
   cpfUsuario: string;
-  profileImageUri?: string;
+  tipo: string;
+  profileImageUri?: string | null;
 }
 
 export interface Course {
-  id: string;
-  title: string;
-  description: string;
-  image: any;
-  instructor: string;
-  instructorImage: any;
-  duration: string;
-  modules: number;
-  level: string;
-  rating?: number;
+  id: number;
+  nomeCurso: string;
+  descricaoCurta: string;
+  descricaoDetalhada?: string;
+  professor: string;
+  categoria: string;
+  tempoCurso: number;
+  avaliacao?: number;
+  imagemCurso?: string | null;
+  status?: string;
+  modulos?: Module[];
   enrolled?: boolean;
 }
 
 export interface CourseDetails extends Course {
-  nomeCurso: string;
   descricaoDetalhada: string;
-  tempoCurso: number;
-  avaliacao: number;
   modulos: Module[];
 }
 
+export interface EnrollmentProgress {
+  id: number;
+  aula: Lesson;
+  concluida: boolean;
+  dataConclusao?: string | null;
+}
+
+export interface Enrollment {
+  id: number;
+  status: 'ativo' | 'concluido' | 'cancelado';
+  dataInscricao: string;
+  dataConclusao?: string | null;
+  curso: Course;
+  progressoAulas: EnrollmentProgress[];
+}
+
 export interface Module {
+  id: number;
   nomeModulo: string;
+  tempoModulo: number;
   aulas: Lesson[];
 }
 
 export interface Lesson {
+  id: number;
   nomeAula: string;
-  duracao: string;
+  tempoAula: number;
+  videoUrl?: string | null;
+  materialApoio?: string[] | null;
+  descricaoConteudo?: string;
   concluida?: boolean;
 }
 
 export interface Review {
-  autor: string;
+  autor: string | null;
   nota: number;
   comentario: string;
+}
+
+export interface DashboardCourseProgress {
+  cursoId: number;
+  nomeCurso: string;
+  percentualConcluido: number;
+}
+
+export interface DashboardStudyHistory {
   data: string;
+  minutosEstudados: number;
+}
+
+export interface DashboardCoursesByCategory {
+  categoria: string;
+  total: number;
+}
+
+export interface DashboardNotableReview {
+  cursoId: number;
+  nomeCurso: string;
+  avaliacaoFeita: boolean;
 }
 
 export interface DashboardData {
@@ -51,9 +93,18 @@ export interface DashboardData {
   totalCertificados: number;
   tempoTotalEstudoMinutos: number;
   diasAtivosEstudo: number;
-  ultimoDiaAtividade: string;
+  ultimoDiaAtividade: string | null;
   diasConsecutivosEstudo: number;
   sequenciaAtualDiasConsecutivos: number;
+  progressoPorCurso: DashboardCourseProgress[];
+  historicoEstudo: DashboardStudyHistory[];
+  cursosPorCategoria: DashboardCoursesByCategory[];
+  notasMediasPorCurso: {
+    cursoId: number;
+    nomeCurso: string;
+    notaMedia: number;
+  }[];
+  avaliacoes: DashboardNotableReview[];
 }
 
 export interface Certificate {
@@ -61,7 +112,8 @@ export interface Certificate {
   courseName: string;
   studentName: string;
   issueDate: string;
-  certificateUrl: string;
+  inscriptionId: number;
+  status: string;
 }
 
 export type RootStackParamList = {
@@ -75,6 +127,7 @@ export type RootStackParamList = {
   CursosLista: undefined;
   DetalhesCurso: { courseId: string };
   AulasCurso: { courseId: string };
+  AvaliacaoCurso: { courseId: string };
   Dashboard: undefined;
   Profile: { userId: string };
 };

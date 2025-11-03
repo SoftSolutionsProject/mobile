@@ -1,14 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ApiService from '../services/ApiService';
-
-interface User {
-  id: string;
-  nomeUsuario: string;
-  email: string;
-  cpfUsuario: string;
-  tipo: string;
-}
+import { User } from '../types';
 
 interface AuthContextData {
   user: User | null;
@@ -45,20 +38,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (storedToken && storedUserId) {
         setToken(storedToken);
-        
-        // Buscar dados completos do usuário
+
         try {
-          const userData = await ApiService.getProfile(parseInt(storedUserId));
+          const userData = await ApiService.getProfile(parseInt(storedUserId, 10));
           setUser({
-            id: userData.id.toString(),
-            nomeUsuario: userData.nomeUsuario,
-            email: userData.email,
-            cpfUsuario: userData.cpfUsuario,
-            tipo: storedTipoUser || 'aluno',
+            ...userData,
+            tipo: storedTipoUser || userData.tipo || 'aluno',
           });
         } catch (error) {
           console.error('Erro ao carregar dados do usuário:', error);
-          // Se não conseguir carregar os dados, limpar o storage
           await clearAuth();
         }
       }
@@ -84,11 +72,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       setToken(response.access_token);
       setUser({
-        id: response.usuario.id.toString(),
+        id: String(response.usuario.id),
         nomeUsuario: response.usuario.nomeUsuario,
         email: response.usuario.email,
         cpfUsuario: response.usuario.cpfUsuario,
         tipo: response.usuario.tipo,
+        profileImageUri: null,
       });
     } catch (error) {
       throw error;

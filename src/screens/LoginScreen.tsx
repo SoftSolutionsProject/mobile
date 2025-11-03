@@ -19,6 +19,7 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
+import NotificationService from '../services/NotificationService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -57,17 +58,19 @@ const LoginScreen: React.FC = () => {
     try {
       setIsLoggingIn(true);
       await login(email, senha);
-      Alert.alert('Sucesso', 'Login realizado com sucesso!', [
-        { text: 'OK', onPress: () => navigation.navigate('Dashboard') }
-      ]);
+      NotificationService.showSuccess('Login realizado com sucesso!');
+      navigation.navigate('Dashboard');
     } catch (error: any) {
       console.error('Erro no login:', error);
       if (error.response?.status === 401) {
         setErrorMessage('Email ou senha incorretos');
+        NotificationService.showError('Email ou senha incorretos');
       } else if (error.response?.status === 400) {
         setErrorMessage('Dados inválidos. Verifique suas informações.');
+        NotificationService.showError('Dados inválidos. Verifique suas informações.');
       } else {
         setErrorMessage('Erro ao fazer login. Tente novamente.');
+        NotificationService.showError('Erro ao fazer login. Tente novamente.');
       }
     } finally {
       setIsLoggingIn(false);

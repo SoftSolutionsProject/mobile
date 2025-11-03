@@ -9,6 +9,7 @@ import {
   Alert,
   TextInput,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -18,6 +19,8 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Ionicons } from '@expo/vector-icons';
 import ProfileImageService from '../services/ProfileImageService';
+import ApiService from '../services/ApiService';
+import { useAuth } from '../contexts/AuthContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'Profile'>;
@@ -26,6 +29,7 @@ const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RoutePropType>();
   const { userId } = route.params || { userId: '1' };
+  const { isAuthenticated, user: authUser, updateUser } = useAuth();
   
   const [user, setUser] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -35,51 +39,60 @@ const ProfileScreen: React.FC = () => {
     cpfUsuario: '',
   });
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
 
-  // Mock data - em produção viria da API baseado no userId
   useEffect(() => {
-    const loadUserData = async () => {
-      try {
-        setLoading(true);
-        // Simular carregamento
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const mockUser: User = {
-          id: userId,
-          nomeUsuario: 'João Silva',
-          email: 'joao.silva@email.com',
-          cpfUsuario: '12345678901',
-        };
-        
-        // Carregar imagem de perfil do banco local
-        const savedImageUri = await ProfileImageService.getProfileImage(userId);
-        if (savedImageUri) {
-          mockUser.profileImageUri = savedImageUri;
-          setProfileImageUri(savedImageUri);
-        }
-        
-        setUser(mockUser);
-        setEditData({
-          nomeUsuario: mockUser.nomeUsuario,
-          email: mockUser.email,
-          cpfUsuario: mockUser.cpfUsuario,
-        });
-      } catch (err) {
-        Alert.alert('Erro', 'Erro ao carregar dados do usuário');
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (isAuthenticated && authUser) {
+      loadUserData();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, authUser]);
 
-    loadUserData();
-  }, [userId]);
+  const loadUserData = async () => {
+    try {
+      setLoading(true);
+      
+      // Carregar dados do usuário da API
+      const numericId = parseInt(authUser?.id || userId, 10);
+      const userData = await ApiService.getProfile(numericId);
+      
+      // Carregar dados do dashboard
+      const dashboard = await ApiService.getDashboard(numericId);
+      setDashboardData(dashboard);
+      
+      // Carregar imagem de perfil do banco local
+      const savedImageUri = await ProfileImageService.getProfileImage(authUser?.id || userId);
+      if (savedImageUri) {
+        setProfileImageUri(savedImageUri);
+      }
+      
+      const transformedUser: User = {
+        ...userData,
+        profileImageUri: savedImageUri ?? userData.profileImageUri ?? null,
+      };
+      
+      setUser(transformedUser);
+      setEditData({
+        nomeUsuario: userData.nomeUsuario,
+        email: userData.email,
+        cpfUsuario: userData.cpfUsuario,
+      });
+    } catch (error) {
+      console.error('Erro ao carregar dados do usuário:', error);
+      Alert.alert('Erro', 'Erro ao carregar dados do usuário');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEdit = () => {
     setIsEditing(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editData.nomeUsuario.trim()) {
       Alert.alert('Erro', 'Nome é obrigatório');
       return;
@@ -97,15 +110,42 @@ const ProfileScreen: React.FC = () => {
       return;
     }
 
-    // Mock salvamento - em produção seria uma chamada à API
-    setUser({
-      ...user!,
-      nomeUsuario: editData.nomeUsuario,
-      email: editData.email,
-      cpfUsuario: editData.cpfUsuario,
-    });
-    setIsEditing(false);
-    Alert.alert('Sucesso', 'Dados atualizados com sucesso!');
+    try {
+      setSaving(true);
+      
+      // Atualizar dados na API
+      const numericId = parseInt(authUser?.id || userId, 10);
+      const updatedUser = await ApiService.updateProfile(numericId, {
+        nomeUsuario: editData.nomeUsuario,
+        email: editData.email,
+        cpfUsuario: editData.cpfUsuario,
+      });
+      
+      // Atualizar estado local
+      const newUser: User = {
+        ...updatedUser,
+        profileImageUri: profileImageUri ?? updatedUser.profileImageUri ?? null,
+      };
+      setUser(newUser);
+      
+      // Atualizar contexto de autenticação
+      updateUser({
+        id: newUser.id,
+        nomeUsuario: newUser.nomeUsuario,
+        email: newUser.email,
+        cpfUsuario: newUser.cpfUsuario,
+        tipo: newUser.tipo,
+        profileImageUri: newUser.profileImageUri,
+      });
+      
+      setIsEditing(false);
+      Alert.alert('Sucesso', 'Dados atualizados com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao atualizar perfil:', error);
+      Alert.alert('Erro', error.message || 'Erro ao atualizar dados');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -125,13 +165,24 @@ const ProfileScreen: React.FC = () => {
     );
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     Alert.alert(
       'Logout',
       'Tem certeza que deseja sair?',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Sair', onPress: () => navigation.navigate('Home') }
+        { 
+          text: 'Sair', 
+          onPress: async () => {
+            try {
+              await ApiService.logout();
+              navigation.navigate('Home');
+            } catch (error) {
+              console.error('Erro ao fazer logout:', error);
+              navigation.navigate('Home');
+            }
+          }
+        }
       ]
     );
   };
@@ -219,11 +270,24 @@ const ProfileScreen: React.FC = () => {
     return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   };
 
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.container}>
+        <Header showBackButton title="Perfil" />
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Você precisa fazer login para ver seu perfil</Text>
+        </View>
+        <Footer />
+      </View>
+    );
+  }
+
   if (loading) {
     return (
       <View style={styles.container}>
         <Header showBackButton title="Perfil" />
         <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4a9eff" />
           <Text style={styles.loadingText}>Carregando perfil...</Text>
         </View>
         <Footer />
@@ -269,15 +333,15 @@ const ProfileScreen: React.FC = () => {
           {/* Profile Stats */}
           <View style={styles.statsSection}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>5</Text>
+              <Text style={styles.statNumber}>{dashboardData?.totalCursosInscritos || 0}</Text>
               <Text style={styles.statLabel}>Cursos Inscritos</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>3</Text>
+              <Text style={styles.statNumber}>{dashboardData?.totalCertificados || 0}</Text>
               <Text style={styles.statLabel}>Certificados</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>45</Text>
+              <Text style={styles.statNumber}>{dashboardData?.diasAtivosEstudo || 0}</Text>
               <Text style={styles.statLabel}>Dias Ativos</Text>
             </View>
           </View>
@@ -331,10 +395,15 @@ const ProfileScreen: React.FC = () => {
                   </TouchableOpacity>
                   
                   <TouchableOpacity
-                    style={styles.saveButton}
+                    style={[styles.saveButton, saving && styles.buttonDisabled]}
                     onPress={handleSave}
+                    disabled={saving}
                   >
-                    <Text style={styles.saveButtonText}>Salvar</Text>
+                    {saving ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.saveButtonText}>Salvar</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -453,6 +522,18 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: '#666',
+    marginTop: 10,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  errorText: {
+    color: '#e74c3c',
+    fontSize: 16,
+    textAlign: 'center',
   },
   profileHeader: {
     backgroundColor: '#4a9eff',
@@ -643,6 +724,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  buttonDisabled: {
+    backgroundColor: '#ccc',
   },
   actionsSection: {
     marginBottom: 30,

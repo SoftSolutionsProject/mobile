@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,85 +10,103 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList, DashboardData } from '../types';
+import { Ionicons } from '@expo/vector-icons';
+
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { Ionicons } from '@expo/vector-icons';
 import ApiService from '../services/ApiService';
 import { useAuth } from '../contexts/AuthContext';
+import { DashboardData, RootStackParamList } from '../types';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const { user, isAuthenticated } = useAuth();
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated && user) {
       loadDashboardData();
     } else {
-      setLoading(false);
-      setError('Usuário não autenticado');
+      setIsLoading(false);
+      setError('Faça login para acessar seu dashboard.');
     }
   }, [isAuthenticated, user]);
 
   const loadDashboardData = async () => {
     try {
-      setLoading(true);
-      setError('');
-      
       if (!user) {
-        throw new Error('Usuário não encontrado');
+        throw new Error('Usuário não encontrado.');
       }
-      
-      const data = await ApiService.getDashboard(parseInt(user.id));
-      setDashboardData(data);
-    } catch (err: any) {
-      console.error('Erro ao carregar dashboard:', err);
-      setError('Erro ao carregar dados do dashboard');
+      setIsLoading(true);
+      setError(null);
+      const response = await ApiService.getDashboard(Number(user.id));
+      setDashboard(response);
+    } catch (error: any) {
+      console.error('Erro ao carregar dashboard:', error);
+      setError(error?.message || 'Não foi possível carregar o dashboard.');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   const formatTime = (minutes: number) => {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
+    if (hours === 0) {
+      return `${mins} min`;
+    }
     return `${hours}h ${mins}min`;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) {
+      return 'Sem registro';
+    }
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return 'Sem registro';
+    }
+    return date.toLocaleDateString('pt-BR');
   };
 
-  const renderStatCard = (title: string, value: string | number, icon: string, color: string = '#125887') => (
-    <View style={styles.statCard}>
-      <View style={styles.statIcon}>
-        <Ionicons name={icon as any} size={24} color={color} />
-      </View>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{title}</Text>
-    </View>
-  );
+  const topCourses = useMemo(() => {
+    if (!dashboard) {
+      return [];
+    }
+    return [...dashboard.progressoPorCurso]
+      .sort((a, b) => b.percentualConcluido - a.percentualConcluido)
+      .slice(0, 3);
+  }, [dashboard]);
 
-  const renderHighlightCard = (title: string, value: string | number, icon: string) => (
-    <View style={[styles.statCard, styles.highlightCard]}>
-      <View style={styles.statIcon}>
-        <Ionicons name={icon as any} size={24} color="#2ecc71" />
-      </View>
-      <Text style={[styles.statValue, styles.highlightValue]}>{value}</Text>
-      <Text style={styles.statLabel}>{title}</Text>
-    </View>
-  );
+  const recentStudy = useMemo(() => {
+    if (!dashboard) {
+      return [];
+    }
+    return [...dashboard.historicoEstudo]
+      .sort(
+        (a, b) =>
+          new Date(b.data).getTime() - new Date(a.data).getTime(),
+      )
+      .slice(0, 5);
+  }, [dashboard]);
 
-  if (loading) {
+  const pendingEvaluations = useMemo(() => {
+    if (!dashboard) {
+      return [];
+    }
+    return dashboard.avaliacoes.filter((item) => !item.avaliacaoFeita);
+  }, [dashboard]);
+
+  if (isLoading) {
     return (
-      <View style={styles.container}>
+      <View style={styles.loadingWrapper}>
         <Header showBackButton title="Dashboard" />
-        <View style={styles.loadingContainer}>
+        <View style={styles.loadingContent}>
           <ActivityIndicator size="large" color="#4a9eff" />
           <Text style={styles.loadingText}>Carregando dashboard...</Text>
         </View>
@@ -97,20 +115,16 @@ const DashboardScreen: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (error || !dashboard) {
     return (
-      <View style={styles.container}>
+      <View style={styles.errorWrapper}>
         <Header showBackButton title="Dashboard" />
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => {
-              setError('');
-              setLoading(true);
-            }}
-          >
-            <Text style={styles.retryButtonText}>Tentar Novamente</Text>
+        <View style={styles.errorContent}>
+          <Ionicons name="alert-circle" size={48} color="#e74c3c" />
+          <Text style={styles.errorTitle}>Ops!</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadDashboardData}>
+            <Text style={styles.retryButtonText}>Tentar novamente</Text>
           </TouchableOpacity>
         </View>
         <Footer />
@@ -123,151 +137,179 @@ const DashboardScreen: React.FC = () => {
       <Header showBackButton title="Dashboard" />
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
-          {/* Welcome Section */}
-          <View style={styles.welcomeSection}>
+          <View style={styles.welcomeCard}>
             <Text style={styles.welcomeTitle}>Bem-vindo de volta!</Text>
             <Text style={styles.welcomeSubtitle}>
-              Acompanhe seu progresso e continue aprendendo
+              Continue evoluindo sua jornada de estudos com os insights abaixo.
             </Text>
           </View>
 
-          {/* Stats Grid */}
           <View style={styles.statsGrid}>
-            {renderStatCard(
-              'Total de Cursos Inscritos',
-              dashboardData?.totalCursosInscritos || 0,
-              'book',
-              '#125887'
-            )}
-            {renderStatCard(
-              'Total de Certificados',
-              dashboardData?.totalCertificados || 0,
-              'school',
-              '#2ecc71'
-            )}
-            {renderStatCard(
-              'Tempo Total de Estudo',
-              formatTime(dashboardData?.tempoTotalEstudoMinutos || 0),
-              'time',
-              '#e67e22'
-            )}
-            {renderStatCard(
-              'Dias Ativos de Estudo',
-              dashboardData?.diasAtivosEstudo || 0,
-              'calendar',
-              '#9b59b6'
-            )}
-            {renderStatCard(
-              'Último Dia de Atividade',
-              formatDate(dashboardData?.ultimoDiaAtividade || ''),
-              'today',
-              '#34495e'
-            )}
-            {renderHighlightCard(
-              'Dias Consecutivos de Estudo',
-              dashboardData?.diasConsecutivosEstudo || 0,
-              'trending-up'
+            <StatCard
+              icon="book"
+              label="Cursos inscritos"
+              value={dashboard.totalCursosInscritos}
+              iconColor="#4a9eff"
+            />
+            <StatCard
+              icon="school"
+              label="Certificados conquistados"
+              value={dashboard.totalCertificados}
+              iconColor="#2ecc71"
+            />
+            <StatCard
+              icon="time"
+              label="Tempo total de estudo"
+              value={formatTime(dashboard.tempoTotalEstudoMinutos)}
+              iconColor="#f39c12"
+            />
+            <StatCard
+              icon="calendar"
+              label="Dias ativos"
+              value={dashboard.diasAtivosEstudo}
+              iconColor="#9b59b6"
+            />
+            <StatCard
+              icon="today"
+              label="Última atividade"
+              value={formatDate(dashboard.ultimoDiaAtividade)}
+              iconColor="#16a085"
+            />
+            <StatCard
+              icon="flame"
+              label="Sequência atual"
+              value={`${dashboard.sequenciaAtualDiasConsecutivos} dias`}
+              iconColor="#e74c3c"
+            />
+          </View>
+
+          <View style={styles.section}>
+            <SectionHeader
+              title="Seu progresso por curso"
+              subtitle="Acompanhe quanto falta para concluir cada curso."
+            />
+            {topCourses.length === 0 ? (
+              <EmptyState message="Inscreva-se em um curso para acompanhar seu progresso." />
+            ) : (
+              topCourses.map((courseProgress) => (
+                <View key={courseProgress.cursoId} style={styles.progressRow}>
+                  <View style={styles.progressInfo}>
+                    <Text style={styles.progressCourse}>{courseProgress.nomeCurso}</Text>
+                    <Text style={styles.progressPercentage}>
+                      {Math.round(courseProgress.percentualConcluido)}%
+                    </Text>
+                  </View>
+                  <View style={styles.progressBar}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        { width: `${courseProgress.percentualConcluido}%` },
+                      ]}
+                    />
+                  </View>
+                </View>
+              ))
             )}
           </View>
 
-          {/* Current Streak */}
-          <View style={styles.streakSection}>
-            <Text style={styles.sectionTitle}>Sequência Atual</Text>
-            <View style={styles.streakCard}>
-              <View style={styles.streakIcon}>
-                <Ionicons name="flame" size={32} color="#e74c3c" />
-              </View>
-              <View style={styles.streakInfo}>
-                <Text style={styles.streakNumber}>
-                  {dashboardData?.sequenciaAtualDiasConsecutivos || 0} dias
-                </Text>
-                <Text style={styles.streakText}>
-                  Sequência atual de dias com estudo
-                </Text>
-              </View>
-            </View>
+          <View style={styles.section}>
+            <SectionHeader
+              title="Histórico recente de estudos"
+              subtitle="Rastreie seus hábitos de estudo nos últimos dias."
+            />
+            {recentStudy.length === 0 ? (
+              <EmptyState message="Ainda não há registro de estudos. Que tal começar hoje?" />
+            ) : (
+              recentStudy.map((item) => (
+                <View key={item.data} style={styles.historyItem}>
+                  <View>
+                    <Text style={styles.historyDate}>{formatDate(item.data)}</Text>
+                    <Text style={styles.historyDuration}>
+                      {formatTime(item.minutosEstudados)}
+                    </Text>
+                  </View>
+                  <Ionicons name="checkmark-circle" size={20} color="#2ecc71" />
+                </View>
+              ))
+            )}
           </View>
 
-          {/* Quick Actions */}
+          <View style={styles.section}>
+            <SectionHeader
+              title="Distribuição por categoria"
+              subtitle="Veja como seus cursos estão distribuídos nas categorias."
+            />
+            {dashboard.cursosPorCategoria.length === 0 ? (
+              <EmptyState message="Nenhum curso categorizado até o momento." />
+            ) : (
+              dashboard.cursosPorCategoria.map((category) => (
+                <View key={category.categoria} style={styles.categoryRow}>
+                  <Text style={styles.categoryName}>{category.categoria}</Text>
+                  <View style={styles.categoryBadge}>
+                    <Text style={styles.categoryBadgeText}>{category.total}</Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+
+          <View style={styles.section}>
+            <SectionHeader
+              title="Avaliações pendentes"
+              subtitle="Avalie os cursos concluídos para liberar certificados e ajudar outros alunos."
+            />
+            {pendingEvaluations.length === 0 ? (
+              <EmptyState message="Nenhuma avaliação pendente. Continue estudando!" />
+            ) : (
+              pendingEvaluations.map((item) => (
+                <TouchableOpacity
+                  key={item.cursoId}
+                  style={styles.pendingCard}
+                  onPress={() =>
+                    navigation.navigate('AvaliacaoCurso', {
+                      courseId: String(item.cursoId),
+                    })
+                  }
+                >
+                  <View>
+                    <Text style={styles.pendingTitle}>{item.nomeCurso}</Text>
+                    <Text style={styles.pendingSubtitle}>
+                      Clique para avaliar este curso.
+                    </Text>
+                  </View>
+                  <Ionicons name="arrow-forward" size={18} color="#4a9eff" />
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+
           <View style={styles.actionsSection}>
-            <Text style={styles.sectionTitle}>Ações Rápidas</Text>
+            <SectionHeader
+              title="Ações rápidas"
+              subtitle="Continue sua jornada com um toque."
+            />
             <View style={styles.actionsGrid}>
-              <TouchableOpacity
-                style={styles.actionCard}
+              <ActionCard
+                icon="book"
+                label="Explorar cursos"
                 onPress={() => navigation.navigate('CursosLista')}
-              >
-                <Ionicons name="book" size={24} color="#125887" />
-                <Text style={styles.actionText}>Ver Cursos</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.actionCard}
+              />
+              <ActionCard
+                icon="school"
+                label="Meus certificados"
                 onPress={() => navigation.navigate('Certificados')}
-              >
-                <Ionicons name="school" size={24} color="#125887" />
-                <Text style={styles.actionText}>Meus Certificados</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.actionCard}
-                onPress={() => navigation.navigate('Profile', { userId: user?.id || '1' })}
-              >
-                <Ionicons name="person" size={24} color="#125887" />
-                <Text style={styles.actionText}>Meu Perfil</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.actionCard}
+              />
+              <ActionCard
+                icon="person"
+                label="Meu perfil"
+                onPress={() => navigation.navigate('Profile', { userId: user?.id || '' })}
+              />
+              <ActionCard
+                icon="help-circle"
+                label="Suporte"
                 onPress={() => navigation.navigate('Contato')}
-              >
-                <Ionicons name="help-circle" size={24} color="#125887" />
-                <Text style={styles.actionText}>Suporte</Text>
-              </TouchableOpacity>
+              />
             </View>
-          </View>
-
-          {/* Recent Activity */}
-          <View style={styles.activitySection}>
-            <Text style={styles.sectionTitle}>Atividade Recente</Text>
-            <View style={styles.activityCard}>
-              <View style={styles.activityItem}>
-                <Ionicons name="checkmark-circle" size={20} color="#2ecc71" />
-                <Text style={styles.activityText}>
-                  Concluiu a aula "Variáveis e Tipos de Dados"
-                </Text>
-                <Text style={styles.activityTime}>2 horas atrás</Text>
-              </View>
-              
-              <View style={styles.activityItem}>
-                <Ionicons name="school" size={20} color="#125887" />
-                <Text style={styles.activityText}>
-                  Recebeu certificado de "Fundamentos em Python"
-                </Text>
-                <Text style={styles.activityTime}>1 dia atrás</Text>
-              </View>
-              
-              <View style={styles.activityItem}>
-                <Ionicons name="play-circle" size={20} color="#e67e22" />
-                <Text style={styles.activityText}>
-                  Iniciou o curso "React Native Para Mobile"
-                </Text>
-                <Text style={styles.activityTime}>3 dias atrás</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Info Button */}
-          <View style={styles.infoSection}>
-            <TouchableOpacity
-              style={styles.infoButton}
-              onPress={() => {
-                // Lógica para abrir explicações
-                console.log('Abrir explicações');
-              }}
-            >
-              <Ionicons name="information-circle" size={20} color="#125887" />
-              <Text style={styles.infoButtonText}>Entenda os dados exibidos</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -276,7 +318,55 @@ const DashboardScreen: React.FC = () => {
   );
 };
 
+type StatCardProps = {
+  icon: any;
+  iconColor: string;
+  value: string | number;
+  label: string;
+};
+
+const StatCard: React.FC<StatCardProps> = ({ icon, iconColor, value, label }) => (
+  <View style={styles.statCard}>
+    <View style={[styles.statIcon, { backgroundColor: `${iconColor}20` }]}>
+      <Ionicons name={icon} size={22} color={iconColor} />
+    </View>
+    <Text style={styles.statValue}>{value}</Text>
+    <Text style={styles.statLabel}>{label}</Text>
+  </View>
+);
+
+type SectionHeaderProps = {
+  title: string;
+  subtitle: string;
+};
+
+const SectionHeader: React.FC<SectionHeaderProps> = ({ title, subtitle }) => (
+  <View style={styles.sectionHeader}>
+    <Text style={styles.sectionTitle}>{title}</Text>
+    <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+  </View>
+);
+
+const EmptyState: React.FC<{ message: string }> = ({ message }) => (
+  <View style={styles.emptyState}>
+    <Ionicons name="information-circle" size={32} color="#4a9eff" />
+    <Text style={styles.emptyStateText}>{message}</Text>
+  </View>
+);
+
+const ActionCard: React.FC<{ icon: any; label: string; onPress: () => void }> = ({
+  icon,
+  label,
+  onPress,
+}) => (
+  <TouchableOpacity style={styles.actionCard} onPress={onPress}>
+    <Ionicons name={icon} size={24} color="#4a9eff" />
+    <Text style={styles.actionLabel}>{label}</Text>
+  </TouchableOpacity>
+);
+
 const { width } = Dimensions.get('window');
+const cardWidth = (width - 56) / 2;
 
 const styles = StyleSheet.create({
   container: {
@@ -288,222 +378,264 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 20,
+    paddingBottom: 32,
   },
-  loadingContainer: {
+  loadingWrapper: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  loadingContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
+    gap: 12,
   },
   loadingText: {
-    fontSize: 16,
-    color: '#666',
+    color: '#fff',
+    fontSize: 14,
   },
-  errorContainer: {
+  errorWrapper: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  errorContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingHorizontal: 24,
+    gap: 12,
   },
-  errorText: {
-    fontSize: 16,
-    color: '#e74c3c',
+  errorTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  errorMessage: {
+    color: '#ccc',
+    fontSize: 14,
     textAlign: 'center',
-    marginBottom: 20,
+    lineHeight: 20,
   },
   retryButton: {
     backgroundColor: '#4a9eff',
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 24,
   },
   retryButtonText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
   },
-  welcomeSection: {
-    backgroundColor: '#4a9eff',
-    paddingVertical: 30,
-    paddingHorizontal: 20,
-    marginHorizontal: -20,
-    marginBottom: 30,
-    alignItems: 'center',
+  welcomeCard: {
+    backgroundColor: '#1e1e1e',
+    padding: 24,
+    borderRadius: 18,
+    marginTop: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
   },
   welcomeTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   welcomeSubtitle: {
-    fontSize: 16,
-    color: '#b0c4de',
-    textAlign: 'center',
-    lineHeight: 22,
+    fontSize: 14,
+    color: '#c0c0c0',
+    lineHeight: 20,
   },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 30,
+    gap: 16,
+    marginBottom: 28,
   },
   statCard: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    width: (width - 60) / 2,
-    marginBottom: 15,
-    alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  highlightCard: {
-    backgroundColor: '#f0f8f0',
-    borderWidth: 2,
-    borderColor: '#2ecc71',
+    width: cardWidth,
+    backgroundColor: '#1e1e1e',
+    padding: 18,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    alignItems: 'flex-start',
+    gap: 12,
   },
   statIcon: {
-    width: 50,
-    height: 50,
-    backgroundColor: '#f0f8ff',
-    borderRadius: 25,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
   },
   statValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#4a9eff',
-    marginBottom: 5,
-  },
-  highlightValue: {
-    color: '#2ecc71',
+    color: '#fff',
   },
   statLabel: {
     fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
+    color: '#c0c0c0',
     lineHeight: 16,
   },
-  streakSection: {
-    marginBottom: 30,
+  section: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    marginBottom: 16,
+    gap: 4,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#4a9eff',
-    marginBottom: 15,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff',
   },
-  streakCard: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
+  sectionSubtitle: {
+    fontSize: 13,
+    color: '#a0a0a0',
+  },
+  progressRow: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    marginBottom: 12,
+  },
+  progressInfo: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    marginBottom: 10,
   },
-  streakIcon: {
-    marginRight: 15,
-  },
-  streakInfo: {
+  progressCourse: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
     flex: 1,
   },
-  streakNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#e74c3c',
-    marginBottom: 5,
-  },
-  streakText: {
+  progressPercentage: {
+    color: '#4a9eff',
     fontSize: 14,
-    color: '#666',
+    fontWeight: '600',
+    marginLeft: 12,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#2b2b2b',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#4a9eff',
+  },
+  historyItem: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  historyDate: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  historyDuration: {
+    color: '#c0c0c0',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1e1e1e',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    marginBottom: 10,
+  },
+  categoryName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  categoryBadge: {
+    backgroundColor: '#4a9eff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  categoryBadgeText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  pendingCard: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  pendingTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  pendingSubtitle: {
+    color: '#c0c0c0',
+    fontSize: 12,
   },
   actionsSection: {
-    marginBottom: 30,
+    marginBottom: 20,
   },
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: 16,
   },
   actionCard: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    width: (width - 60) / 2,
-    marginBottom: 15,
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  actionText: {
-    fontSize: 14,
-    color: '#4a9eff',
-    marginTop: 10,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  activitySection: {
-    marginBottom: 30,
-  },
-  activityCard: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  activityItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  activityText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#333',
-    marginLeft: 10,
-  },
-  activityTime: {
-    fontSize: 12,
-    color: '#999',
-  },
-  infoSection: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  infoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f8ff',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 20,
+    width: cardWidth,
+    backgroundColor: '#1e1e1e',
+    padding: 18,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#125887',
+    borderColor: '#2b2b2b',
+    alignItems: 'center',
+    gap: 12,
   },
-  infoButtonText: {
-    color: '#4a9eff',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 8,
+  actionLabel: {
+    color: '#c0c0c0',
+    fontSize: 13,
+  },
+  emptyState: {
+    backgroundColor: '#1e1e1e',
+    padding: 18,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  emptyStateText: {
+    color: '#c0c0c0',
+    fontSize: 13,
+    flex: 1,
   },
 });
 

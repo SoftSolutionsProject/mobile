@@ -9,12 +9,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
+import ApiService from '../services/ApiService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -22,12 +24,14 @@ const RecuperarSenhaScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const [email, setEmail] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const validateEmail = (email: string) => {
-    return email.includes('@') && email.includes('.');
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
   };
 
-  const handleRecuperarSenha = () => {
+  const handleRecuperarSenha = async () => {
     setErrorMessage('');
     
     if (!email.trim()) {
@@ -40,14 +44,23 @@ const RecuperarSenhaScreen: React.FC = () => {
       return;
     }
 
-    // Mock recuperação de senha - em produção seria uma chamada à API
-    Alert.alert(
-      'Email Enviado',
-      'Um link para redefinir sua senha foi enviado para seu email.',
-      [
-        { text: 'OK', onPress: () => navigation.navigate('Login') }
-      ]
-    );
+    try {
+      setIsLoading(true);
+      await ApiService.solicitarRecuperacaoSenha(email);
+      
+      Alert.alert(
+        'Solicitação Enviada',
+        'Sua solicitação de recuperação de senha foi enviada. Nossa equipe entrará em contato em breve.',
+        [
+          { text: 'OK', onPress: () => navigation.navigate('Login') }
+        ]
+      );
+    } catch (error: any) {
+      console.error('Erro ao solicitar recuperação de senha:', error);
+      setErrorMessage(error.message || 'Erro ao enviar solicitação. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -84,8 +97,16 @@ const RecuperarSenhaScreen: React.FC = () => {
                     <Text style={styles.errorText}>{errorMessage}</Text>
                   ) : null}
 
-                  <TouchableOpacity style={styles.button} onPress={handleRecuperarSenha}>
-                    <Text style={styles.buttonText}>Enviar Link de Recuperação</Text>
+                  <TouchableOpacity 
+                    style={[styles.button, isLoading && styles.buttonDisabled]} 
+                    onPress={handleRecuperarSenha}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.buttonText}>Enviar Solicitação</Text>
+                    )}
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -184,6 +205,9 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 8,
     marginBottom: 20,
+  },
+  buttonDisabled: {
+    backgroundColor: '#ccc',
   },
   buttonText: {
     color: '#fff',

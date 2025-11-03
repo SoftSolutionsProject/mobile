@@ -5,11 +5,11 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -18,6 +18,8 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Ionicons } from '@expo/vector-icons';
 import { validateEmail, validatePhone, formatPhone } from '../utils/validations';
+import ApiService from '../services/ApiService';
+import NotificationService from '../services/NotificationService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -31,6 +33,7 @@ const ContatoScreen: React.FC = () => {
     mensagem: '',
   });
   const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validateForm = () => {
     setErrorMessage('');
@@ -96,19 +99,41 @@ const ContatoScreen: React.FC = () => {
     setErrorMessage('');
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setErrorMessage('');
     
     if (!validateForm()) {
       return;
     }
 
-    // Mock envio de mensagem - em produção seria uma chamada à API
-    Alert.alert(
-      'Mensagem Enviada',
-      'Sua mensagem foi enviada com sucesso! Entraremos em contato em breve.',
-      [{ text: 'OK', onPress: () => navigation.navigate('Home') }]
-    );
+    try {
+      setIsSubmitting(true);
+      await ApiService.enviarEmailSuporte({
+        nome: formData.nome.trim(),
+        email: formData.email.trim(),
+        assunto: formData.assunto.trim(),
+        mensagem: `${formData.mensagem.trim()}\n\nTelefone para contato: ${
+          formData.telefone || 'não informado'
+        }`,
+      });
+
+      NotificationService.showSuccess('Mensagem enviada com sucesso!');
+      setFormData({
+        nome: '',
+        email: '',
+        telefone: '',
+        assunto: '',
+        mensagem: '',
+      });
+      navigation.navigate('Home');
+    } catch (error: any) {
+      console.error('Erro ao enviar mensagem de contato:', error);
+      NotificationService.showError(
+        error?.message || 'Não foi possível enviar sua mensagem. Tente novamente.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const openLink = (url: string) => {
@@ -221,8 +246,16 @@ const ContatoScreen: React.FC = () => {
                   <Text style={styles.errorText}>{errorMessage}</Text>
                 ) : null}
 
-                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                  <Text style={styles.submitButtonText}>Enviar Mensagem</Text>
+                <TouchableOpacity
+                  style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.submitButtonText}>Enviar Mensagem</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -393,6 +426,9 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 8,
     marginTop: 10,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#9cc7ff',
   },
   submitButtonText: {
     color: '#fff',

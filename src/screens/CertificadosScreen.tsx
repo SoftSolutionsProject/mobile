@@ -1,261 +1,319 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
+  ActivityIndicator,
   Alert,
   Modal,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList, Certificate } from '../types';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { Ionicons } from '@expo/vector-icons';
+import ApiService from '../services/ApiService';
+import { useAuth } from '../contexts/AuthContext';
+import { Certificate, Enrollment, RootStackParamList } from '../types';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const CertificadosScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
+  const { isAuthenticated, user } = useAuth();
+
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
 
-  // Mock data - em produção viria da API
-  const certificates: Certificate[] = [
-    {
-      id: '1',
-      courseName: 'Fundamentos em Python',
-      studentName: 'João Silva',
-      issueDate: '2024-01-15',
-      certificateUrl: 'https://example.com/certificate1.pdf',
-    },
-    {
-      id: '2',
-      courseName: 'React Native Para Mobile',
-      studentName: 'João Silva',
-      issueDate: '2024-02-20',
-      certificateUrl: 'https://example.com/certificate2.pdf',
-    },
-    {
-      id: '3',
-      courseName: 'JavaScript Avançado',
-      studentName: 'João Silva',
-      issueDate: '2024-03-10',
-      certificateUrl: 'https://example.com/certificate3.pdf',
-    },
-  ];
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadCertificates();
+    } else {
+      setIsLoading(false);
+    }
+  }, [isAuthenticated]);
 
-  const handleCertificatePress = (certificate: Certificate) => {
+  const loadCertificates = async () => {
+    try {
+      setIsLoading(true);
+      const response = await ApiService.listarInscricoesUsuario();
+      setEnrollments(response);
+
+      const completed = response.filter((item) => item.status === 'concluido');
+
+      const mappedCertificates: Certificate[] = completed.map((enrollment) => ({
+        id: String(enrollment.id),
+        courseName: enrollment.curso.nomeCurso,
+        studentName: user?.nomeUsuario ?? 'Aluno',
+        issueDate:
+          enrollment.dataConclusao ?? enrollment.dataInscricao ?? new Date().toISOString(),
+        inscriptionId: enrollment.id,
+        status: enrollment.status,
+      }));
+
+      setCertificates(mappedCertificates);
+    } catch (error: any) {
+      console.error('Erro ao carregar certificados:', error);
+      Alert.alert(
+        'Erro',
+        error?.message || 'Não foi possível carregar seus certificados agora.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOpenCertificate = (certificate: Certificate) => {
     setSelectedCertificate(certificate);
-    setModalVisible(true);
+    setIsModalVisible(true);
   };
 
-  const handleDownloadCertificate = () => {
-    if (selectedCertificate) {
+  const downloadCertificate = async (certificate: Certificate) => {
+    try {
+      setIsProcessing(true);
+      const blob = await ApiService.baixarCertificado(certificate.inscriptionId);
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string;
+          const base64Data = base64.split(',')[1];
+          const fileName = `certificado_${certificate.courseName.replace(/\s+/g, '_')}.pdf`;
+          const fileUri = FileSystem.documentDirectory + fileName;
+
+          await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+
+          const isAvailable = await Sharing.isAvailableAsync();
+          if (isAvailable) {
+            await Sharing.shareAsync(fileUri, {
+              mimeType: 'application/pdf',
+              dialogTitle: 'Compartilhar certificado',
+            });
+          } else {
+            Alert.alert('Sucesso', 'Certificado salvo nos seus arquivos.');
+          }
+        } catch (error) {
+          console.error('Erro ao processar certificado:', error);
+          Alert.alert('Erro', 'Não foi possível processar o certificado.');
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+      reader.readAsDataURL(blob);
+    } catch (error: any) {
+      console.error('Erro ao baixar certificado:', error);
+      setIsProcessing(false);
       Alert.alert(
-        'Download do Certificado',
-        `Certificado de ${selectedCertificate.courseName} será baixado.`,
-        [{ text: 'OK' }]
+        'Erro',
+        error?.message || 'Não foi possível baixar o certificado. Certifique-se de ter concluído todas as aulas.',
       );
     }
   };
 
-  const handleShareCertificate = () => {
-    if (selectedCertificate) {
-      Alert.alert(
-        'Compartilhar Certificado',
-        `Compartilhar certificado de ${selectedCertificate.courseName}.`,
-        [{ text: 'OK' }]
-      );
+  const handleDownload = () => {
+    if (!selectedCertificate) return;
+    downloadCertificate(selectedCertificate);
+  };
+
+  const handleShare = () => {
+    if (!selectedCertificate) return;
+    downloadCertificate(selectedCertificate);
+  };
+
+  const completionRate = useMemo(() => {
+    if (enrollments.length === 0) {
+      return 0;
     }
-  };
+    const completed = enrollments.filter((item) => item.status === 'concluido').length;
+    return Math.round((completed / enrollments.length) * 100);
+  }, [enrollments]);
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR');
-  };
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.container}>
+        <Header showBackButton title="Meus certificados" />
+        <View style={styles.centerContent}>
+          <Ionicons name="lock-closed" size={48} color="#4a9eff" />
+          <Text style={styles.centerTitle}>Faça login para acessar seus certificados.</Text>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Text style={styles.primaryButtonText}>Fazer login</Text>
+          </TouchableOpacity>
+        </View>
+        <Footer />
+      </View>
+    );
+  }
 
-  const renderCertificateCard = (certificate: Certificate) => (
-    <TouchableOpacity
-      key={certificate.id}
-      style={styles.certificateCard}
-      onPress={() => handleCertificatePress(certificate)}
-    >
-      <View style={styles.certificateHeader}>
-        <View style={styles.certificateIcon}>
-          <Ionicons name="school" size={30} color="#4a9eff" />
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <Header showBackButton title="Meus certificados" />
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color="#4a9eff" />
+          <Text style={styles.helperText}>Carregando seus certificados...</Text>
         </View>
-        <View style={styles.certificateInfo}>
-          <Text style={styles.courseName}>{certificate.courseName}</Text>
-          <Text style={styles.issueDate}>
-            Emitido em {formatDate(certificate.issueDate)}
-          </Text>
-        </View>
+        <Footer />
       </View>
-      
-      <View style={styles.certificateFooter}>
-        <View style={styles.statusBadge}>
-          <Ionicons name="checkmark-circle" size={16} color="#2ecc71" />
-          <Text style={styles.statusText}>Concluído</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color="#666" />
-      </View>
-    </TouchableOpacity>
-  );
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <Header showBackButton title="Meus Certificados" />
+      <Header showBackButton title="Meus certificados" />
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
-          {/* Stats Section */}
-          <View style={styles.statsSection}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{certificates.length}</Text>
-              <Text style={styles.statLabel}>Certificados</Text>
+          <View style={styles.statsCard}>
+            <View style={styles.statBlock}>
+              <Text style={styles.statValue}>{certificates.length}</Text>
+              <Text style={styles.statLabel}>Certificados conquistados</Text>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>100%</Text>
-              <Text style={styles.statLabel}>Taxa de Conclusão</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>2024</Text>
-              <Text style={styles.statLabel}>Ano Atual</Text>
+            <View style={styles.statDivider} />
+            <View style={styles.statBlock}>
+              <Text style={styles.statValue}>{completionRate}%</Text>
+              <Text style={styles.statLabel}>Taxa de conclusão</Text>
             </View>
           </View>
 
-          {/* Certificates List */}
-          <View style={styles.certificatesSection}>
-            <Text style={styles.sectionTitle}>Certificados Conquistados</Text>
-            {certificates.length > 0 ? (
-              <View style={styles.certificatesList}>
-                {certificates.map(renderCertificateCard)}
-              </View>
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons name="school-outline" size={64} color="#ccc" />
-                <Text style={styles.emptyTitle}>Nenhum certificado encontrado</Text>
-                <Text style={styles.emptySubtitle}>
-                  Complete um curso para receber seu primeiro certificado
-                </Text>
-                <TouchableOpacity
-                  style={styles.exploreButton}
-                  onPress={() => navigation.navigate('CursosLista')}
-                >
-                  <Text style={styles.exploreButtonText}>Explorar Cursos</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Certificados disponíveis</Text>
+            <Text style={styles.sectionSubtitle}>
+              Baixe e compartilhe suas conquistas com um toque.
+            </Text>
           </View>
 
-          {/* Info Section */}
-          <View style={styles.infoSection}>
-            <Text style={styles.sectionTitle}>Sobre os Certificados</Text>
-            <View style={styles.infoCard}>
-              <View style={styles.infoItem}>
-                <Ionicons name="shield-checkmark" size={20} color="#2ecc71" />
-                <Text style={styles.infoText}>
-                  Certificados verificáveis e reconhecidos pelo mercado
-                </Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Ionicons name="download" size={20} color="#4a9eff" />
-                <Text style={styles.infoText}>
-                  Download em PDF de alta qualidade
-                </Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Ionicons name="share" size={20} color="#4a9eff" />
-                <Text style={styles.infoText}>
-                  Compartilhamento em redes sociais e LinkedIn
-                </Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Ionicons name="infinite" size={20} color="#4a9eff" />
-                <Text style={styles.infoText}>
-                  Acesso vitalício aos seus certificados
-                </Text>
-              </View>
+          {certificates.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="school-outline" size={64} color="#4a9eff" />
+              <Text style={styles.emptyTitle}>Você ainda não possui certificados.</Text>
+              <Text style={styles.helperText}>
+                Finalize um curso para liberar seu certificado de conclusão.
+              </Text>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={() => navigation.navigate('CursosLista')}
+              >
+                <Text style={styles.primaryButtonText}>Explorar cursos</Text>
+              </TouchableOpacity>
             </View>
+          ) : (
+            certificates.map((certificate) => (
+              <TouchableOpacity
+                key={certificate.id}
+                style={styles.certificateCard}
+                onPress={() => handleOpenCertificate(certificate)}
+              >
+                <View style={styles.certificateIcon}>
+                  <Ionicons name="document-text" size={24} color="#4a9eff" />
+                </View>
+                <View style={styles.certificateInfo}>
+                  <Text style={styles.certificateCourse}>{certificate.courseName}</Text>
+                  <Text style={styles.certificateDate}>
+                    Emitido em{' '}
+                    {new Date(certificate.issueDate).toLocaleDateString('pt-BR')}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#fff" />
+              </TouchableOpacity>
+            ))
+          )}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Como funcionam os certificados?</Text>
+          </View>
+          <View style={styles.infoCard}>
+            <InfoRow
+              icon="shield-checkmark"
+              text="Certificados válidos e verificáveis pelo código único."
+            />
+            <InfoRow
+              icon="time"
+              text="Liberação automática ao concluir 100% das aulas."
+            />
+            <InfoRow
+              icon="share-social"
+              text="Compartilhe em redes sociais ou faça download em PDF."
+            />
           </View>
         </View>
       </ScrollView>
       <Footer />
 
-      {/* Certificate Modal */}
       <Modal
-        visible={modalVisible}
+        transparent
         animationType="slide"
-        transparent={true}
-        onRequestClose={() => setModalVisible(false)}
+        visible={isModalVisible}
+        onRequestClose={() => setIsModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Certificado</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setModalVisible(false)}
-              >
-                <Ionicons name="close" size={24} color="#666" />
+              <TouchableOpacity onPress={() => setIsModalVisible(false)}>
+                <Ionicons name="close" size={22} color="#333" />
               </TouchableOpacity>
             </View>
-            
-            {selectedCertificate && (
-              <View style={styles.certificateDetails}>
-                <View style={styles.certificatePreview}>
-                  <Ionicons name="school" size={64} color="#4a9eff" />
-                  <Text style={styles.previewTitle}>Certificado de Conclusão</Text>
-                  <Text style={styles.previewCourse}>{selectedCertificate.courseName}</Text>
-                </View>
-                
-                <View style={styles.detailsList}>
-                  <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Aluno:</Text>
-                    <Text style={styles.detailValue}>{selectedCertificate.studentName}</Text>
-                  </View>
-                  <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Curso:</Text>
-                    <Text style={styles.detailValue}>{selectedCertificate.courseName}</Text>
-                  </View>
-                  <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Data de Emissão:</Text>
-                    <Text style={styles.detailValue}>
-                      {formatDate(selectedCertificate.issueDate)}
-                    </Text>
-                  </View>
-                </View>
-                
+            {selectedCertificate ? (
+              <View style={styles.modalBody}>
+                <Text style={styles.modalCourse}>{selectedCertificate.courseName}</Text>
+                <Text style={styles.modalStudent}>{selectedCertificate.studentName}</Text>
+                <Text style={styles.modalDate}>
+                  Emitido em{' '}
+                  {new Date(selectedCertificate.issueDate).toLocaleDateString('pt-BR')}
+                </Text>
+
                 <View style={styles.modalActions}>
                   <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={handleDownloadCertificate}
+                    style={[styles.primaryButton, styles.modalButton]}
+                    onPress={handleDownload}
+                    disabled={isProcessing}
                   >
-                    <Ionicons name="download" size={20} color="#fff" />
-                    <Text style={styles.actionButtonText}>Baixar PDF</Text>
+                    {isProcessing ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <>
+                        <Ionicons name="download" size={18} color="#fff" />
+                        <Text style={styles.primaryButtonText}>Baixar PDF</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
-                  
                   <TouchableOpacity
-                    style={[styles.actionButton, styles.shareButton]}
-                    onPress={handleShareCertificate}
+                    style={[styles.secondaryButton, styles.modalButton]}
+                    onPress={handleShare}
+                    disabled={isProcessing}
                   >
-                    <Ionicons name="share" size={20} color="#4a9eff" />
-                    <Text style={[styles.actionButtonText, styles.shareButtonText]}>
-                      Compartilhar
-                    </Text>
+                    <Ionicons name="share-social" size={18} color="#4a9eff" />
+                    <Text style={styles.secondaryButtonText}>Compartilhar</Text>
                   </TouchableOpacity>
                 </View>
               </View>
-            )}
+            ) : null}
           </View>
         </View>
       </Modal>
     </View>
   );
 };
+
+const InfoRow: React.FC<{ icon: any; text: string }> = ({ icon, text }) => (
+  <View style={styles.infoRow}>
+    <Ionicons name={icon} size={18} color="#4a9eff" />
+    <Text style={styles.infoText}>{text}</Text>
+  </View>
+);
 
 const styles = StyleSheet.create({
   container: {
@@ -267,244 +325,221 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 20,
+    paddingBottom: 32,
   },
-  statsSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    marginTop: 20,
-    marginBottom: 30,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#4a9eff',
-    marginBottom: 5,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-  },
-  certificatesSection: {
-    marginBottom: 30,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#4a9eff',
-    marginBottom: 20,
-  },
-  certificatesList: {
-    gap: 15,
-  },
-  certificateCard: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  certificateHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  certificateIcon: {
-    width: 60,
-    height: 60,
-    backgroundColor: '#f0f8ff',
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  certificateInfo: {
+  centerContent: {
     flex: 1,
-  },
-  courseName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4a9eff',
-    marginBottom: 5,
-  },
-  issueDate: {
-    fontSize: 14,
-    color: '#666',
-  },
-  certificateFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusText: {
-    fontSize: 14,
-    color: '#2ecc71',
-    marginLeft: 5,
-    fontWeight: '600',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#666',
-    marginTop: 15,
-    marginBottom: 10,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 20,
-  },
-  exploreButton: {
-    backgroundColor: '#4a9eff',
-    paddingVertical: 12,
+    justifyContent: 'center',
+    gap: 12,
     paddingHorizontal: 24,
-    borderRadius: 20,
   },
-  exploreButtonText: {
+  centerTitle: {
+    color: '#fff',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  helperText: {
+    color: '#c0c0c0',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4a9eff',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    gap: 6,
+  },
+  primaryButtonText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
   },
-  infoSection: {
-    marginBottom: 30,
-  },
-  infoCard: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  infoItem: {
+  secondaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 15,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#4a9eff',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 24,
+    gap: 6,
+  },
+  secondaryButtonText: {
+    color: '#4a9eff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  statsCard: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    marginBottom: 24,
+  },
+  statBlock: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: '#2b2b2b',
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  statLabel: {
+    fontSize: 13,
+    color: '#c0c0c0',
+    marginTop: 6,
+  },
+  sectionHeader: {
+    marginBottom: 16,
+    gap: 6,
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  sectionSubtitle: {
+    color: '#a0a0a0',
+    fontSize: 13,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1e1e1e',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    textAlign: 'center',
+  },
+  certificateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e1e1e',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    padding: 18,
+    marginBottom: 12,
+    gap: 16,
+  },
+  certificateIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#2b2b2b',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  certificateInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  certificateCourse: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  certificateDate: {
+    color: '#c0c0c0',
+    fontSize: 12,
+  },
+  infoCard: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    padding: 18,
+    gap: 12,
+    marginBottom: 20,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   infoText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 10,
+    color: '#c0c0c0',
+    fontSize: 13,
     flex: 1,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderRadius: 15,
-    width: '90%',
-    maxHeight: '80%',
+    borderRadius: 18,
+    width: '100%',
+    maxWidth: 380,
+    overflow: 'hidden',
   },
   modalHeader: {
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#4a9eff',
-  },
-  closeButton: {
-    padding: 5,
-  },
-  certificateDetails: {
-    padding: 20,
-  },
-  certificatePreview: {
-    alignItems: 'center',
-    paddingVertical: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    marginBottom: 20,
-  },
-  previewTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4a9eff',
-    marginTop: 10,
-    marginBottom: 5,
-  },
-  previewCourse: {
-    fontSize: 14,
-    color: '#666',
-  },
-  detailsList: {
-    marginBottom: 20,
-  },
-  detailItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  detailLabel: {
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: '600',
-    color: '#4a9eff',
+    color: '#2b2b2b',
   },
-  detailValue: {
+  modalBody: {
+    padding: 20,
+    gap: 12,
+  },
+  modalCourse: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  modalStudent: {
     fontSize: 14,
     color: '#666',
-    flex: 1,
-    textAlign: 'right',
+  },
+  modalDate: {
+    fontSize: 13,
+    color: '#999',
   },
   modalActions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
+    marginTop: 12,
   },
-  actionButton: {
+  modalButton: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4a9eff',
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  actionButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 5,
-  },
-  shareButton: {
-    backgroundColor: '#f0f8ff',
-  },
-  shareButtonText: {
-    color: '#4a9eff',
   },
 });
 

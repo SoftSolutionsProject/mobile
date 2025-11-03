@@ -25,6 +25,7 @@ import {
   unformatCPF 
 } from '../utils/validations';
 import ApiService from '../services/ApiService';
+import NotificationService from '../services/NotificationService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -134,17 +135,19 @@ const CadastroScreen: React.FC = () => {
       };
       
       await ApiService.cadastrarUsuario(userData);
-      Alert.alert('Sucesso', 'Cadastro realizado com sucesso!', [
-        { text: 'OK', onPress: () => navigation.navigate('Login') }
-      ]);
+      NotificationService.showSuccess('Cadastro realizado com sucesso!');
+      navigation.navigate('Login');
     } catch (error: any) {
       console.error('Erro no cadastro:', error);
       if (error.response?.status === 400) {
         setErrorMessage('Dados inválidos. Verifique suas informações.');
+        NotificationService.showError('Dados inválidos. Verifique suas informações.');
       } else if (error.response?.status === 409) {
         setErrorMessage('Email ou CPF já cadastrado.');
+        NotificationService.showError('Email ou CPF já cadastrado.');
       } else {
         setErrorMessage('Erro ao realizar cadastro. Tente novamente.');
+        NotificationService.showError('Erro ao realizar cadastro. Tente novamente.');
       }
     } finally {
       setIsRegistering(false);
