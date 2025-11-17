@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import { environment } from '../config/environment';
 import {
   Course,
@@ -23,6 +24,15 @@ export interface LoginResponse {
   };
   access_token: string;
 }
+
+type FileSystemWithFallback = typeof FileSystem & {
+  documentDirectory?: string | null;
+  cacheDirectory?: string | null;
+  Paths?: {
+    document?: { uri?: string | null };
+    cache?: { uri?: string | null };
+  };
+};
 
 class ApiService {
   private readonly API_URL = environment.apiUrl;
@@ -119,6 +129,34 @@ class ApiService {
     return fallback;
   }
 
+  private getDownloadDirectory(): string {
+    const fs = FileSystem as FileSystemWithFallback;
+    const directory =
+      fs.documentDirectory ||
+      fs.cacheDirectory ||
+      fs.Paths?.document?.uri ||
+      fs.Paths?.cache?.uri ||
+      '';
+    if (!directory) {
+      throw new Error('Diretório temporário não encontrado para salvar certificados.');
+    }
+    return directory.endsWith('/') ? directory : `${directory}/`;
+  }
+
+  private async safeDeleteFile(uri: string) {
+    if (!uri) {
+      return;
+    }
+    try {
+      const info = await FileSystem.getInfoAsync(uri);
+      if (info.exists) {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      }
+    } catch (fileError) {
+      console.warn('Não foi possível remover arquivo temporário:', fileError);
+    }
+  }
+
   private mapLesson(aula: any): Lesson {
     return {
       id: this.ensureNumber(aula?.id),
@@ -198,6 +236,26 @@ class ApiService {
     };
   }
 
+  private mapAddress(data: any): User['endereco'] {
+    if (!data) {
+      return null;
+    }
+    const address = {
+      rua: this.ensureString(data?.rua, ''),
+      numero: this.ensureString(data?.numero, ''),
+      bairro: this.ensureString(data?.bairro, ''),
+      cidade: this.ensureString(data?.cidade, ''),
+      estado: this.ensureString(data?.estado, ''),
+      pais: this.ensureString(data?.pais, ''),
+    };
+
+    const hasAnyValue = Object.values(address).some(
+      (value) => typeof value === 'string' && value.trim().length > 0,
+    );
+
+    return hasAnyValue ? address : null;
+  }
+
   private mapUser(data: any): User {
     return {
       id: this.ensureNumber(data?.id).toString(),
@@ -205,6 +263,11 @@ class ApiService {
       email: this.ensureString(data?.email, ''),
       cpfUsuario: this.ensureString(data?.cpfUsuario, ''),
       tipo: this.ensureString(data?.tipo, 'aluno'),
+      telefone: (() => {
+        const telefone = this.ensureString(data?.telefone, '');
+        return telefone.length > 0 ? telefone : null;
+      })(),
+      endereco: this.mapAddress(data?.endereco),
       profileImageUri: null,
     };
   }
@@ -476,22 +539,43 @@ class ApiService {
 
   // ---------- Certificados ----------
 
-  async baixarCertificado(idInscricao: number): Promise<Blob> {
+  async baixarCertificado(idInscricao: number, suggestedName?: string): Promise<string> {
+    const sanitizedName = (suggestedName && suggestedName.trim().length > 0
+      ? suggestedName.trim()
+      : `certificado_${idInscricao}`
+    ).replace(/[^a-zA-Z0-9-_]/g, '_');
+
+    const fileName = `${sanitizedName}_${Date.now()}.pdf`;
+    const directory = this.getDownloadDirectory();
+    const fileUri = `${directory}${fileName}`;
+
     try {
-      const headers = await this.getAuthHeaders();
-      const response = await axios.get(`${this.API_URL}/certificados/${idInscricao}`, {
-        ...headers,
-        responseType: 'blob',
-      });
-      return response.data as Blob;
+      await this.safeDeleteFile(fileUri);
+      const { headers } = await this.getAuthHeaders();
+      const downloadOptions =
+        headers.Authorization !== undefined
+          ? { headers: { Authorization: headers.Authorization } }
+          : undefined;
+
+      const downloadResult = await FileSystem.downloadAsync(
+        `${this.API_URL}/certificados/${idInscricao}`,
+        fileUri,
+        downloadOptions,
+      );
+      return downloadResult.uri;
     } catch (error) {
+      await this.safeDeleteFile(fileUri);
       this.handleError(error);
     }
   }
 
   async verificarCertificado(idInscricao: number): Promise<boolean> {
     try {
-      await this.baixarCertificado(idInscricao);
+      const headers = await this.getAuthHeaders();
+      await axios.get(`${this.API_URL}/certificados/${idInscricao}`, {
+        ...headers,
+        responseType: 'arraybuffer',
+      });
       return true;
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 403) {

@@ -1,24 +1,25 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Image,
   TextInput,
   FlatList,
   ActivityIndicator,
+  RefreshControl,
+  ScrollView,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import ApiService from '../services/ApiService';
-import { Course, Enrollment, RootStackParamList } from '../types';
+import { Course, RootStackParamList } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useCourses } from '../contexts/CoursesContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -32,48 +33,34 @@ type FilterOption = {
 const CursosListaScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const { isAuthenticated } = useAuth();
+  const {
+    courses,
+    enrollments,
+    isLoadingCourses,
+    isRefreshingCourses,
+    coursesError,
+    refreshCourses,
+    refreshEnrollments,
+  } = useCourses();
 
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadCourses();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      refreshCourses();
+      if (isAuthenticated) {
+        refreshEnrollments();
+      }
+    }, [refreshCourses, refreshEnrollments, isAuthenticated]),
+  );
 
-  useEffect(() => {
+  const handleRefresh = useCallback(() => {
+    refreshCourses(true);
     if (isAuthenticated) {
-      loadEnrollments();
-    } else {
-      setEnrollments([]);
+      refreshEnrollments(true);
     }
-  }, [isAuthenticated]);
-
-  const loadCourses = async () => {
-    try {
-      setIsLoading(true);
-      setErrorMessage(null);
-      const response = await ApiService.listarCursos();
-      setCourses(response);
-    } catch (error: any) {
-      console.error('Erro ao buscar cursos:', error);
-      setErrorMessage(error?.message || 'Não foi possível carregar os cursos.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadEnrollments = async () => {
-    try {
-      const response = await ApiService.listarInscricoesUsuario();
-      setEnrollments(response);
-    } catch (error) {
-      console.error('Erro ao carregar inscrições:', error);
-    }
-  };
+  }, [isAuthenticated, refreshCourses, refreshEnrollments]);
 
   const enrolledCourseIds = useMemo(() => {
     return new Set(enrollments.map((item) => item.curso.id));
@@ -130,12 +117,13 @@ const CursosListaScreen: React.FC = () => {
     });
   }, [courses, enrolledCourseIds, searchQuery, selectedFilter]);
 
-  const renderCourseCard = ({ item }: { item: Course }) => {
-    const enrolled = enrolledCourseIds.has(item.id);
+  const renderCourseCard = useCallback(
+    ({ item }: { item: Course }) => {
+      const enrolled = enrolledCourseIds.has(item.id);
 
-    return (
-      <TouchableOpacity
-        style={styles.courseCard}
+      return (
+        <TouchableOpacity
+          style={styles.courseCard}
         onPress={() =>
           navigation.navigate('DetalhesCurso', { courseId: String(item.id) })
         }
@@ -207,7 +195,9 @@ const CursosListaScreen: React.FC = () => {
         </View>
       </TouchableOpacity>
     );
-  };
+    },
+    [enrolledCourseIds, navigation],
+  );
 
   const renderFilterButton = ({ key, label }: FilterOption) => (
     <TouchableOpacity
@@ -229,92 +219,126 @@ const CursosListaScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
+  const renderListHeader = () => {
+    return (
+      <View style={styles.listHeader}>
+        <View style={styles.searchSection}>
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color="#666" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Buscar cursos, instrutores ou categorias..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor="#999"
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            {searchQuery.length > 0 ? (
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={() => setSearchQuery('')}
+              >
+                <Ionicons name="close-circle" size={18} color="#666" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.filtersSection}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {filterOptions.map(renderFilterButton)}
+          </ScrollView>
+        </View>
+
+        <View style={styles.resultsSection}>
+          <Text style={styles.resultsText}>
+            {filteredCourses.length} curso
+            {filteredCourses.length === 1 ? '' : 's'} encontrado
+            {filteredCourses.length === 1 ? '' : 's'}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderEmptyComponent = () => {
+    if (coursesError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={48} color="#e74c3c" />
+          <Text style={styles.errorTitle}>Não foi possível carregar os cursos</Text>
+          <Text style={styles.errorMessage}>{coursesError}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
+            <Text style={styles.retryButtonText}>Tentar novamente</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (courses.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="school-outline" size={48} color="#ccc" />
+          <Text style={styles.emptyTitle}>Nenhum curso disponível no momento</Text>
+          <Text style={styles.emptySubtitle}>
+            Assim que novos cursos estiverem disponíveis, eles aparecerão aqui.
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="search" size={64} color="#ccc" />
+        <Text style={styles.emptyTitle}>Nenhum curso encontrado</Text>
+        <Text style={styles.emptySubtitle}>
+          Ajuste os filtros ou o termo de busca para encontrar o curso ideal.
+        </Text>
+        <TouchableOpacity
+          style={styles.clearFiltersButton}
+          onPress={() => {
+            setSearchQuery('');
+            setSelectedFilter('all');
+          }}
+        >
+          <Text style={styles.clearFiltersButtonText}>Limpar filtros</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const showInitialLoading = isLoadingCourses && courses.length === 0;
+
   return (
     <View style={styles.container}>
       <Header showBackButton title="Cursos" />
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.content}>
-          <View style={styles.searchSection}>
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#666" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Buscar cursos, instrutores ou categorias..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholderTextColor="#999"
-                autoCorrect={false}
-                autoCapitalize="none"
-              />
-              {searchQuery.length > 0 ? (
-                <TouchableOpacity
-                  style={styles.clearButton}
-                  onPress={() => setSearchQuery('')}
-                >
-                  <Ionicons name="close-circle" size={18} color="#666" />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          </View>
-
-          <View style={styles.filtersSection}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {filterOptions.map(renderFilterButton)}
-            </ScrollView>
-          </View>
-
-          <View style={styles.resultsSection}>
-            <Text style={styles.resultsText}>
-              {filteredCourses.length} curso
-              {filteredCourses.length === 1 ? '' : 's'} encontrado
-              {filteredCourses.length === 1 ? '' : 's'}
-            </Text>
-          </View>
-
-          <View style={styles.coursesSection}>
-            {isLoading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4a9eff" />
-                <Text style={styles.loadingText}>Carregando cursos...</Text>
-              </View>
-            ) : errorMessage ? (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle" size={48} color="#e74c3c" />
-                <Text style={styles.errorTitle}>Não foi possível carregar os cursos</Text>
-                <Text style={styles.errorMessage}>{errorMessage}</Text>
-                <TouchableOpacity style={styles.retryButton} onPress={loadCourses}>
-                  <Text style={styles.retryButtonText}>Tentar novamente</Text>
-                </TouchableOpacity>
-              </View>
-            ) : filteredCourses.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="search" size={64} color="#ccc" />
-                <Text style={styles.emptyTitle}>Nenhum curso encontrado</Text>
-                <Text style={styles.emptySubtitle}>
-                  Ajuste os filtros ou o termo de busca para encontrar o curso ideal.
-                </Text>
-                <TouchableOpacity
-                  style={styles.clearFiltersButton}
-                  onPress={() => {
-                    setSearchQuery('');
-                    setSelectedFilter('all');
-                  }}
-                >
-                  <Text style={styles.clearFiltersButtonText}>Limpar filtros</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <FlatList
-                data={filteredCourses}
-                renderItem={renderCourseCard}
-                keyExtractor={(item) => String(item.id)}
-                scrollEnabled={false}
-                ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
-              />
-            )}
-          </View>
+      {showInitialLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4a9eff" />
+          <Text style={styles.loadingText}>Carregando cursos...</Text>
         </View>
-      </ScrollView>
+      ) : (
+        <FlatList
+          data={filteredCourses}
+          renderItem={renderCourseCard}
+          keyExtractor={(item) => String(item.id)}
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
+          ListHeaderComponent={renderListHeader}
+          ListEmptyComponent={renderEmptyComponent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshingCourses}
+              onRefresh={handleRefresh}
+              tintColor="#fff"
+              colors={['#4a9eff']}
+            />
+          }
+        />
+      )}
       <Footer />
     </View>
   );
@@ -325,12 +349,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
-  scrollView: {
+  list: {
     flex: 1,
   },
-  content: {
+  listContent: {
     paddingHorizontal: 20,
     paddingBottom: 30,
+  },
+  listHeader: {
+    paddingTop: 10,
+    paddingBottom: 20,
   },
   searchSection: {
     marginTop: 20,
@@ -388,9 +416,6 @@ const styles = StyleSheet.create({
   resultsText: {
     fontSize: 14,
     color: '#c0c0c0',
-  },
-  coursesSection: {
-    marginBottom: 24,
   },
   courseCard: {
     backgroundColor: '#1e1e1e',

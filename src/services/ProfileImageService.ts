@@ -74,7 +74,8 @@ class ProfileImageService {
       console.log('Imagem de perfil salva com sucesso para userId:', userId);
     } catch (error) {
       console.error('Erro ao salvar imagem de perfil:', error);
-      throw new Error(`Falha ao salvar imagem de perfil: ${error.message}`);
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      throw new Error(`Falha ao salvar imagem de perfil: ${message}`);
     }
   }
 
@@ -128,7 +129,8 @@ class ProfileImageService {
       console.log('Imagem de perfil deletada com sucesso para userId:', userId);
     } catch (error) {
       console.error('Erro ao deletar imagem de perfil:', error);
-      throw new Error(`Falha ao deletar imagem de perfil: ${error.message}`);
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      throw new Error(`Falha ao deletar imagem de perfil: ${message}`);
     }
   }
 

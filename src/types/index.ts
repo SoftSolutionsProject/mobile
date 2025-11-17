@@ -1,9 +1,20 @@
+export interface UserAddress {
+  rua?: string | null;
+  numero?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
+  pais?: string | null;
+}
+
 export interface User {
   id: string;
   nomeUsuario: string;
   email: string;
   cpfUsuario: string;
   tipo: string;
+  telefone?: string | null;
+  endereco?: UserAddress | null;
   profileImageUri?: string | null;
 }
 

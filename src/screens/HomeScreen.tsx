@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,14 +9,14 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import ApiService from '../services/ApiService';
 import { Course, RootStackParamList } from '../types';
+import { useCourses } from '../contexts/CoursesContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -25,30 +25,17 @@ const placeholderInstructorImage = require('../assets/images/perfil.png');
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { courses, isLoadingCourses, coursesError, refreshCourses } = useCourses();
 
-  useEffect(() => {
-    loadFeaturedCourses();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      refreshCourses();
+    }, [refreshCourses]),
+  );
 
-  const loadFeaturedCourses = async () => {
-    try {
-      setIsLoading(true);
-      setErrorMessage(null);
-
-      const response = await ApiService.listarCursos();
-      setCourses(response.slice(0, 6));
-    } catch (error: any) {
-      console.error('Erro ao carregar cursos:', error);
-      setErrorMessage(
-        error?.message || 'Não foi possível carregar os cursos no momento.',
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const featuredCourses = useMemo(() => courses.slice(0, 6), [courses]);
+  const showLoading = isLoadingCourses && featuredCourses.length === 0;
+  const showError = Boolean(coursesError) && featuredCourses.length === 0;
 
   const features = useMemo(
     () => [
@@ -204,17 +191,20 @@ const HomeScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {isLoading ? (
+          {showLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#4a9eff" />
               <Text style={styles.loadingText}>Carregando cursos...</Text>
             </View>
-          ) : errorMessage ? (
+          ) : showError ? (
             <View style={styles.errorContainer}>
               <Ionicons name="alert-circle" size={32} color="#e74c3c" />
               <Text style={styles.errorTitle}>Não foi possível carregar os cursos</Text>
-              <Text style={styles.errorMessage}>{errorMessage}</Text>
-              <TouchableOpacity style={styles.retryButton} onPress={loadFeaturedCourses}>
+              <Text style={styles.errorMessage}>{coursesError}</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={() => refreshCourses(true)}
+              >
                 <Text style={styles.retryButtonText}>Tentar novamente</Text>
               </TouchableOpacity>
             </View>
@@ -224,7 +214,7 @@ const HomeScreen: React.FC = () => {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.coursesContainer}
             >
-              {courses.length === 0 ? (
+              {featuredCourses.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Ionicons name="school-outline" size={48} color="#ccc" />
                   <Text style={styles.emptyTitle}>Nenhum curso encontrado</Text>
@@ -233,7 +223,7 @@ const HomeScreen: React.FC = () => {
                   </Text>
                 </View>
               ) : (
-                courses.map(renderCourseCard)
+                featuredCourses.map(renderCourseCard)
               )}
             </ScrollView>
           )}

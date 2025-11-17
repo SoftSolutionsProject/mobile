@@ -8,11 +8,13 @@ import {
   Alert,
   Dimensions,
   ActivityIndicator,
-  Linking,
+  Modal,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
+import * as Sharing from 'expo-sharing';
 
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -26,6 +28,7 @@ import {
   RootStackParamList,
 } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useCourses } from '../contexts/CoursesContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'AulasCurso'>;
@@ -41,6 +44,7 @@ const AulasCursoScreen: React.FC = () => {
   const route = useRoute<RoutePropType>();
   const { courseId } = route.params;
   const { isAuthenticated } = useAuth();
+  const { enrollments, refreshEnrollments } = useCourses();
 
   const [course, setCourse] = useState<CourseDetails | null>(null);
   const [modules, setModules] = useState<Module[]>([]);
@@ -49,6 +53,13 @@ const AulasCursoScreen: React.FC = () => {
   const [progressInfo, setProgressInfo] = useState<ProgressInfo | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [currentLessonId, setCurrentLessonId] = useState<number | null>(null);
+  const [isVideoModalVisible, setIsVideoModalVisible] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const [currentLessonTitle, setCurrentLessonTitle] = useState('');
+  const [certificateAvailable, setCertificateAvailable] = useState(false);
+  const [isCheckingCertificate, setIsCheckingCertificate] = useState(false);
+  const [isDownloadingCertificate, setIsDownloadingCertificate] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -57,6 +68,31 @@ const AulasCursoScreen: React.FC = () => {
     loadData();
   }, [courseId, isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+    const activeEnrollment =
+      enrollments.find(
+        (item) => item.curso.id === Number(courseId) && item.status === 'ativo',
+      ) || null;
+
+    if (!activeEnrollment) {
+      setEnrollment(null);
+      setCompletedLessons(new Set());
+      return;
+    }
+
+    setEnrollment(activeEnrollment);
+    setCompletedLessons(
+      new Set(
+        activeEnrollment.progressoAulas
+          .filter((progress) => progress.concluida)
+          .map((progress) => progress.aula.id),
+      ),
+    );
+  }, [courseId, enrollments, isAuthenticated]);
+
   const loadData = async () => {
     try {
       setIsLoading(true);
@@ -64,7 +100,7 @@ const AulasCursoScreen: React.FC = () => {
       const [courseResponse, modulesResponse, enrollmentsResponse] = await Promise.all([
         ApiService.obterCurso(Number(courseId)),
         ApiService.listarModulosEAulasDoCurso(Number(courseId)),
-        ApiService.listarInscricoesUsuario(),
+        refreshEnrollments(true),
       ]);
 
       setCourse(courseResponse);
@@ -85,6 +121,7 @@ const AulasCursoScreen: React.FC = () => {
       }
 
       setEnrollment(activeEnrollment);
+      await verifyCertificateAvailability(activeEnrollment.id);
 
       const completed = new Set<number>(
         activeEnrollment.progressoAulas
@@ -121,6 +158,40 @@ const AulasCursoScreen: React.FC = () => {
     return null;
   };
 
+  const buildPlayableVideoUrl = (rawUrl: string | null | undefined): string | null => {
+    if (!rawUrl) {
+      return null;
+    }
+
+    const trimmedUrl = rawUrl.trim();
+
+    if (trimmedUrl.includes('youtube.com') || trimmedUrl.includes('youtu.be')) {
+      let urlObj: URL | null = null;
+      try {
+        urlObj = new URL(trimmedUrl);
+      } catch (error) {
+        console.warn('URL inválida fornecida para o vídeo:', trimmedUrl);
+      }
+
+      let videoId = '';
+
+      if (trimmedUrl.includes('youtu.be')) {
+        videoId = urlObj?.pathname.replace('/', '') ?? '';
+      } else if (urlObj?.searchParams.get('v')) {
+        videoId = urlObj?.searchParams.get('v') ?? '';
+      } else if (trimmedUrl.includes('/embed/')) {
+        const parts = trimmedUrl.split('/embed/');
+        videoId = parts[1]?.split('?')[0] ?? '';
+      }
+
+      if (videoId.length > 0) {
+        return `https://www.youtube.com/embed/${videoId}?autoplay=1&modestbranding=1&playsinline=1&rel=0`;
+      }
+    }
+
+    return trimmedUrl;
+  };
+
   const handleOpenLesson = (lesson: Lesson) => {
     setCurrentLessonId(lesson.id);
 
@@ -129,17 +200,56 @@ const AulasCursoScreen: React.FC = () => {
       return;
     }
 
-    let urlToOpen = lesson.videoUrl;
-    if (lesson.videoUrl.includes('youtube.com/embed/')) {
-      const videoId = lesson.videoUrl.split('/embed/')[1]?.split('?')[0];
-      if (videoId) {
-        urlToOpen = `https://www.youtube.com/watch?v=${videoId}`;
-      }
+    const playableUrl = buildPlayableVideoUrl(lesson.videoUrl);
+
+    if (!playableUrl) {
+      NotificationService.showError('Não conseguimos identificar o vídeo desta aula.');
+      return;
     }
 
-    Linking.openURL(urlToOpen).catch(() => {
-      NotificationService.showError('Não foi possível abrir o vídeo desta aula.');
-    });
+    setCurrentLessonTitle(lesson.nomeAula);
+    setIsVideoLoading(true);
+    setVideoUrl(playableUrl);
+    setIsVideoModalVisible(true);
+  };
+
+  const handleViewCertificate = async () => {
+    if (!enrollment) {
+      return;
+    }
+
+    try {
+      setIsDownloadingCertificate(true);
+      const safeCourseName = course?.nomeCurso
+        ? course.nomeCurso.replace(/\s+/g, '_').toLowerCase()
+        : `curso_${enrollment.id}`;
+      const fileUri = await ApiService.baixarCertificado(
+        enrollment.id,
+        `certificado_${safeCourseName}`,
+      );
+
+      if (!fileUri) {
+        throw new Error('Não foi possível gerar o certificado agora.');
+      }
+
+      const isShareAvailable = await Sharing.isAvailableAsync();
+      if (isShareAvailable) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Certificado do curso',
+        });
+      } else {
+        NotificationService.showSuccess('Certificado salvo nos seus arquivos.');
+      }
+      setCertificateAvailable(true);
+    } catch (error: any) {
+      console.error('Erro ao abrir certificado:', error);
+      NotificationService.showError(
+        error?.message || 'Não foi possível abrir o certificado agora.',
+      );
+    } finally {
+      setIsDownloadingCertificate(false);
+    }
   };
 
   const handleCompleteLesson = async (lesson: Lesson) => {
@@ -183,7 +293,7 @@ const AulasCursoScreen: React.FC = () => {
 
     const [progressResponse, enrollmentResponse] = await Promise.all([
       ApiService.obterProgresso(enrollment.id),
-      ApiService.listarInscricoesUsuario(),
+      refreshEnrollments(true),
     ]);
 
     const updatedEnrollment =
@@ -200,6 +310,20 @@ const AulasCursoScreen: React.FC = () => {
           .map((progress) => progress.aula.id),
       ),
     );
+    await verifyCertificateAvailability(updatedEnrollment.id);
+  };
+
+  const verifyCertificateAvailability = async (enrollmentId: number) => {
+    try {
+      setIsCheckingCertificate(true);
+      const available = await ApiService.verificarCertificado(enrollmentId);
+      setCertificateAvailable(available);
+    } catch (error) {
+      console.error('Erro ao verificar certificado:', error);
+      setCertificateAvailable(false);
+    } finally {
+      setIsCheckingCertificate(false);
+    }
   };
 
   const totalLessons = useMemo(() => {
@@ -208,6 +332,7 @@ const AulasCursoScreen: React.FC = () => {
 
   const completedCount = completedLessons.size;
   const progressPercentage = progressInfo?.progresso ?? (totalLessons === 0 ? 0 : (completedCount / totalLessons) * 100);
+  const isCertificateUnlocked = progressPercentage >= 100;
 
   if (!isAuthenticated) {
     return (
@@ -290,22 +415,59 @@ const AulasCursoScreen: React.FC = () => {
             </View>
             <View style={styles.progressBar}>
               <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
+          </View>
+          <View style={styles.progressFooter}>
+            <View style={styles.progressStat}>
+              <Ionicons name="time" size={18} color="#4a9eff" />
+              <Text style={styles.progressStatLabel}>
+                {course.tempoCurso ? `${course.tempoCurso}h de conteúdo` : 'Carga horária não informada'}
+              </Text>
             </View>
-            <View style={styles.progressFooter}>
-              <View style={styles.progressStat}>
-                <Ionicons name="time" size={18} color="#4a9eff" />
-                <Text style={styles.progressStatLabel}>
-                  {course.tempoCurso ? `${course.tempoCurso}h de conteúdo` : 'Carga horária não informada'}
-                </Text>
-              </View>
-              <View style={styles.progressStat}>
-                <Ionicons name="trophy" size={18} color="#f1c40f" />
-                <Text style={styles.progressStatLabel}>
-                  {Math.round(progressPercentage)}% concluído
-                </Text>
-              </View>
+            <View style={styles.progressStat}>
+              <Ionicons name="trophy" size={18} color="#f1c40f" />
+              <Text style={styles.progressStatLabel}>
+                {Math.round(progressPercentage)}% concluído
+              </Text>
             </View>
           </View>
+        </View>
+
+          {isCertificateUnlocked && (
+            <View style={styles.certificateCallout}>
+              <View style={styles.certificateCalloutHeader}>
+                <View style={styles.certificateIconWrapper}>
+                  <Ionicons name="school-outline" size={22} color="#fff" />
+                </View>
+                <View style={styles.certificateTextGroup}>
+                  <Text style={styles.certificateCalloutTitle}>Certificado disponível</Text>
+                  <Text style={styles.certificateCalloutSubtitle}>
+                    {certificateAvailable
+                      ? 'Parabéns! Seu certificado está pronto.'
+                      : isCheckingCertificate
+                        ? 'Verificando disponibilidade do certificado...'
+                        : 'Toque para emitir e fazer o download do certificado.'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.certificateButton,
+                  (isDownloadingCertificate || isCheckingCertificate) && styles.buttonDisabled,
+                ]}
+                onPress={handleViewCertificate}
+                disabled={isDownloadingCertificate || isCheckingCertificate}
+              >
+                {isDownloadingCertificate ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="document-text" size={18} color="#fff" />
+                    <Text style={styles.certificateButtonText}>Ver certificado</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.modulesSection}>
             {modules.map((module) => {
@@ -396,6 +558,56 @@ const AulasCursoScreen: React.FC = () => {
         </View>
       </ScrollView>
       <Footer />
+
+      <Modal
+        visible={isVideoModalVisible}
+        animationType="slide"
+        onRequestClose={() => setIsVideoModalVisible(false)}
+        transparent
+      >
+        <View style={styles.videoModalOverlay}>
+          <View style={styles.videoModalContent}>
+            <View style={styles.videoModalHeader}>
+              <Text style={styles.videoModalTitle}>{currentLessonTitle}</Text>
+              <TouchableOpacity
+                style={styles.videoModalCloseButton}
+                onPress={() => {
+                  setIsVideoModalVisible(false);
+                  setVideoUrl(null);
+                  setIsVideoLoading(false);
+                }}
+              >
+                <Ionicons name="close" size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.videoModalBody}>
+              {isVideoLoading && (
+                <View style={styles.videoLoadingContainer}>
+                  <ActivityIndicator size="large" color="#4a9eff" />
+                  <Text style={styles.videoLoadingText}>Carregando vídeo...</Text>
+                </View>
+              )}
+              {videoUrl && (
+                <WebView
+                  source={{ uri: videoUrl }}
+                  onLoadStart={() => setIsVideoLoading(true)}
+                  onLoadEnd={() => setIsVideoLoading(false)}
+                  onError={() => {
+                    setIsVideoModalVisible(false);
+                    setVideoUrl(null);
+                    NotificationService.showError(
+                      'Não foi possível carregar o vídeo desta aula.',
+                    );
+                  }}
+                  allowsFullscreenVideo
+                  mediaPlaybackRequiresUserAction={false}
+                  style={styles.videoWebView}
+                />
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -529,6 +741,59 @@ const styles = StyleSheet.create({
     color: '#cfd9ff',
     fontSize: 13,
   },
+  certificateCallout: {
+    backgroundColor: '#142239',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1f3352',
+    padding: 18,
+    marginBottom: 24,
+    gap: 14,
+  },
+  certificateCalloutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  certificateIconWrapper: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#254473',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  certificateTextGroup: {
+    flex: 1,
+    gap: 6,
+  },
+  certificateCalloutTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  certificateCalloutSubtitle: {
+    color: '#cfd9ff',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  certificateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4a9eff',
+    paddingVertical: 12,
+    borderRadius: 24,
+    gap: 8,
+  },
+  certificateButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
   modulesSection: {
     gap: 18,
   },
@@ -620,6 +885,56 @@ const styles = StyleSheet.create({
     color: '#e74c3c',
     fontSize: 13,
     fontWeight: '600',
+  },
+  videoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  videoModalContent: {
+    backgroundColor: '#000',
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  videoModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderColor: '#1f1f1f',
+  },
+  videoModalTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  videoModalCloseButton: {
+    padding: 4,
+  },
+  videoModalBody: {
+    width: width - 32,
+    height: ((width - 32) * 9) / 16,
+    backgroundColor: '#000',
+  },
+  videoWebView: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  videoLoadingContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    zIndex: 1,
+  },
+  videoLoadingText: {
+    marginTop: 10,
+    color: '#fff',
   },
 });
 

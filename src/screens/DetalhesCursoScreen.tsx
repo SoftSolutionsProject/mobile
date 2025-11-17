@@ -19,8 +19,9 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import ApiService from '../services/ApiService';
 import NotificationService from '../services/NotificationService';
-import { CourseDetails, Enrollment, Review, RootStackParamList } from '../types';
+import { CourseDetails, Review, RootStackParamList } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useCourses } from '../contexts/CoursesContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'DetalhesCurso'>;
@@ -33,10 +34,10 @@ const DetalhesCursoScreen: React.FC = () => {
   const route = useRoute<RoutePropType>();
   const { courseId } = route.params;
   const { isAuthenticated } = useAuth();
+  const { enrollments, refreshEnrollments } = useCourses();
 
   const [course, setCourse] = useState<CourseDetails | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isEnrolling, setIsEnrolling] = useState<boolean>(false);
   const [quantityEnrolled, setQuantityEnrolled] = useState<number>(0);
@@ -54,11 +55,9 @@ const DetalhesCursoScreen: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      loadEnrollments();
-    } else {
-      setEnrollments([]);
+      refreshEnrollments();
     }
-  }, [isAuthenticated, courseId]);
+  }, [isAuthenticated, refreshEnrollments]);
 
   const loadData = async () => {
     try {
@@ -83,15 +82,6 @@ const DetalhesCursoScreen: React.FC = () => {
     }
   };
 
-  const loadEnrollments = async () => {
-    try {
-      const response = await ApiService.listarInscricoesUsuario();
-      setEnrollments(response);
-    } catch (error) {
-      console.error('Erro ao carregar inscrições:', error);
-    }
-  };
-
   const handleEnroll = async () => {
     if (!isAuthenticated) {
       Alert.alert('Faça login', 'Você precisa estar logado para se inscrever no curso.', [
@@ -108,7 +98,7 @@ const DetalhesCursoScreen: React.FC = () => {
       setIsEnrolling(true);
       await ApiService.inscreverUsuario(Number(courseId));
       NotificationService.showSuccess('Inscrição realizada com sucesso!');
-      await Promise.all([loadEnrollments(), loadData()]);
+      await Promise.all([refreshEnrollments(true), loadData()]);
       navigation.navigate('AulasCurso', { courseId: String(courseId) });
     } catch (error: any) {
       console.error('Erro ao se inscrever:', error);
@@ -141,7 +131,7 @@ const DetalhesCursoScreen: React.FC = () => {
             try {
               await ApiService.cancelarInscricao(activeEnrollment.id);
               NotificationService.showSuccess('Inscrição cancelada.');
-              await Promise.all([loadEnrollments(), loadData()]);
+              await Promise.all([refreshEnrollments(true), loadData()]);
             } catch (error: any) {
               console.error('Erro ao cancelar inscrição:', error);
               NotificationService.showError(

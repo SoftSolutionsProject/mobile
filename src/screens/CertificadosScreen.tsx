@@ -12,13 +12,13 @@ import {
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import ApiService from '../services/ApiService';
 import { useAuth } from '../contexts/AuthContext';
+import { useCourses } from '../contexts/CoursesContext';
 import { Certificate, Enrollment, RootStackParamList } from '../types';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
@@ -26,8 +26,8 @@ type NavigationProp = StackNavigationProp<RootStackParamList>;
 const CertificadosScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const { isAuthenticated, user } = useAuth();
+  const { enrollments, refreshEnrollments } = useCourses();
 
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -45,22 +45,10 @@ const CertificadosScreen: React.FC = () => {
   const loadCertificates = async () => {
     try {
       setIsLoading(true);
-      const response = await ApiService.listarInscricoesUsuario();
-      setEnrollments(response);
+      const latestEnrollments = await refreshEnrollments(true);
 
-      const completed = response.filter((item) => item.status === 'concluido');
-
-      const mappedCertificates: Certificate[] = completed.map((enrollment) => ({
-        id: String(enrollment.id),
-        courseName: enrollment.curso.nomeCurso,
-        studentName: user?.nomeUsuario ?? 'Aluno',
-        issueDate:
-          enrollment.dataConclusao ?? enrollment.dataInscricao ?? new Date().toISOString(),
-        inscriptionId: enrollment.id,
-        status: enrollment.status,
-      }));
-
-      setCertificates(mappedCertificates);
+      const mapped = await mapAvailableCertificates(latestEnrollments);
+      setCertificates(mapped);
     } catch (error: any) {
       console.error('Erro ao carregar certificados:', error);
       Alert.alert(
@@ -72,70 +60,127 @@ const CertificadosScreen: React.FC = () => {
     }
   };
 
+  const hasCompletedAllLessons = (enrollment: Enrollment) => {
+    const totalLessons = enrollment.progressoAulas?.length ?? 0;
+    if (totalLessons === 0) {
+      return false;
+    }
+    return enrollment.progressoAulas.every((progress) => progress.concluida);
+  };
+
+  const isEnrollmentEligibleForCertificate = (enrollment: Enrollment) => {
+    if (enrollment.status === 'concluido') {
+      return true;
+    }
+    return hasCompletedAllLessons(enrollment);
+  };
+
+  const mapAvailableCertificates = async (
+    enrollmentsList: Enrollment[],
+  ): Promise<Certificate[]> => {
+    const studentName = user?.nomeUsuario ?? 'Aluno';
+
+    const candidates = enrollmentsList.filter(isEnrollmentEligibleForCertificate);
+
+    const certificatesPromises = candidates.map(async (enrollment) => {
+      try {
+        const available = await ApiService.verificarCertificado(enrollment.id);
+        if (!available) {
+          return null;
+        }
+
+        return {
+          id: String(enrollment.id),
+          courseName: enrollment.curso.nomeCurso,
+          studentName,
+          issueDate:
+            enrollment.dataConclusao ??
+            enrollment.dataInscricao ??
+            new Date().toISOString(),
+          inscriptionId: enrollment.id,
+          status: enrollment.status,
+        } as Certificate;
+      } catch (error) {
+        console.warn('Certificado ainda não disponível para inscrição', enrollment.id, error);
+        return null;
+      }
+    });
+
+    const certificatesResult = await Promise.all(certificatesPromises);
+    return certificatesResult.filter(
+      (certificate): certificate is Certificate => Boolean(certificate),
+    );
+  };
+
   const handleOpenCertificate = (certificate: Certificate) => {
     setSelectedCertificate(certificate);
     setIsModalVisible(true);
   };
 
-  const downloadCertificate = async (certificate: Certificate) => {
+  const sanitizeCourseName = (name: string) =>
+    name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9-_]/g, '')
+      .toLowerCase();
+
+  const downloadCertificate = async (certificate: Certificate, action: 'save' | 'share' = 'save') => {
     try {
       setIsProcessing(true);
-      const blob = await ApiService.baixarCertificado(certificate.inscriptionId);
+      const fileLabel = `certificado_${sanitizeCourseName(certificate.courseName)}`;
+      const fileUri = await ApiService.baixarCertificado(
+        certificate.inscriptionId,
+        fileLabel,
+      );
 
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const base64 = reader.result as string;
-          const base64Data = base64.split(',')[1];
-          const fileName = `certificado_${certificate.courseName.replace(/\s+/g, '_')}.pdf`;
-          const fileUri = FileSystem.documentDirectory + fileName;
+      if (!fileUri) {
+        throw new Error('Não foi possível gerar o certificado no momento.');
+      }
 
-          await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-            encoding: FileSystem.EncodingType.Base64,
+      if (action === 'share') {
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Compartilhar certificado',
           });
-
-          const isAvailable = await Sharing.isAvailableAsync();
-          if (isAvailable) {
-            await Sharing.shareAsync(fileUri, {
-              mimeType: 'application/pdf',
-              dialogTitle: 'Compartilhar certificado',
-            });
-          } else {
-            Alert.alert('Sucesso', 'Certificado salvo nos seus arquivos.');
-          }
-        } catch (error) {
-          console.error('Erro ao processar certificado:', error);
-          Alert.alert('Erro', 'Não foi possível processar o certificado.');
-        } finally {
-          setIsProcessing(false);
+        } else {
+          Alert.alert(
+            'Compartilhamento indisponível',
+            'O compartilhamento não está disponível neste dispositivo.',
+          );
         }
-      };
-      reader.readAsDataURL(blob);
+      } else {
+        Alert.alert('Sucesso', 'Certificado salvo nos seus arquivos.');
+      }
     } catch (error: any) {
       console.error('Erro ao baixar certificado:', error);
-      setIsProcessing(false);
       Alert.alert(
         'Erro',
-        error?.message || 'Não foi possível baixar o certificado. Certifique-se de ter concluído todas as aulas.',
+        error?.message ||
+          'Não foi possível baixar o certificado. Certifique-se de ter concluído todas as aulas.',
       );
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleDownload = () => {
     if (!selectedCertificate) return;
-    downloadCertificate(selectedCertificate);
+    downloadCertificate(selectedCertificate, 'save');
   };
 
   const handleShare = () => {
     if (!selectedCertificate) return;
-    downloadCertificate(selectedCertificate);
+    downloadCertificate(selectedCertificate, 'share');
   };
 
   const completionRate = useMemo(() => {
     if (enrollments.length === 0) {
       return 0;
     }
-    const completed = enrollments.filter((item) => item.status === 'concluido').length;
+    const completed = enrollments.filter(isEnrollmentEligibleForCertificate).length;
     return Math.round((completed / enrollments.length) * 100);
   }, [enrollments]);
 

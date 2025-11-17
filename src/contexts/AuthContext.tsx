@@ -78,6 +78,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         cpfUsuario: response.usuario.cpfUsuario,
         tipo: response.usuario.tipo,
         profileImageUri: null,
+        telefone: null,
+        endereco: null,
       });
     } catch (error) {
       throw error;

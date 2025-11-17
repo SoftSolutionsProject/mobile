@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -27,6 +27,7 @@ const DashboardScreen: React.FC = () => {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -36,6 +37,14 @@ const DashboardScreen: React.FC = () => {
       setError('Faça login para acessar seu dashboard.');
     }
   }, [isAuthenticated, user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (hasLoadedOnce && isAuthenticated && user) {
+        loadDashboardData();
+      }
+    }, [hasLoadedOnce, isAuthenticated, user]),
+  );
 
   const loadDashboardData = async () => {
     try {
@@ -51,6 +60,7 @@ const DashboardScreen: React.FC = () => {
       setError(error?.message || 'Não foi possível carregar o dashboard.');
     } finally {
       setIsLoading(false);
+      setHasLoadedOnce(true);
     }
   };
 

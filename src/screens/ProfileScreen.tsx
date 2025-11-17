@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,34 +14,66 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
-import { RootStackParamList, User } from '../types';
+import { Enrollment, RootStackParamList, User } from '../types';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Ionicons } from '@expo/vector-icons';
 import ProfileImageService from '../services/ProfileImageService';
 import ApiService from '../services/ApiService';
 import { useAuth } from '../contexts/AuthContext';
+import { useCourses } from '../contexts/CoursesContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'Profile'>;
+
+type EditProfileData = {
+  nomeUsuario: string;
+  email: string;
+  cpfUsuario: string;
+  telefone: string;
+  endereco: {
+    rua: string;
+    numero: string;
+    bairro: string;
+    cidade: string;
+    estado: string;
+    pais: string;
+  };
+};
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RoutePropType>();
   const { userId } = route.params || { userId: '1' };
   const { isAuthenticated, user: authUser, updateUser } = useAuth();
+  const { enrollments, refreshEnrollments } = useCourses();
+  const resolvedUserId = authUser?.id || userId || '0';
   
   const [user, setUser] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState({
+  const [editData, setEditData] = useState<EditProfileData>({
     nomeUsuario: '',
     email: '',
     cpfUsuario: '',
+    telefone: '',
+    endereco: {
+      rua: '',
+      numero: '',
+      bairro: '',
+      cidade: '',
+      estado: '',
+      pais: '',
+    },
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
   const [dashboardData, setDashboardData] = useState<any>(null);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const activeEnrollments = useMemo(
+    () => enrollments.filter((item) => item.status === 'ativo'),
+    [enrollments],
+  );
 
   useEffect(() => {
     if (isAuthenticated && authUser) {
@@ -54,20 +86,18 @@ const ProfileScreen: React.FC = () => {
   const loadUserData = async () => {
     try {
       setLoading(true);
+      const numericId = parseInt(resolvedUserId, 10);
+      const enrollmentsPromise = refreshEnrollments(true);
+
+      const [userData, dashboard, savedImageUri] = await Promise.all([
+        ApiService.getProfile(numericId),
+        ApiService.getDashboard(numericId),
+        ProfileImageService.getProfileImage(resolvedUserId),
+      ]);
       
-      // Carregar dados do usuário da API
-      const numericId = parseInt(authUser?.id || userId, 10);
-      const userData = await ApiService.getProfile(numericId);
-      
-      // Carregar dados do dashboard
-      const dashboard = await ApiService.getDashboard(numericId);
+      await enrollmentsPromise;
       setDashboardData(dashboard);
-      
-      // Carregar imagem de perfil do banco local
-      const savedImageUri = await ProfileImageService.getProfileImage(authUser?.id || userId);
-      if (savedImageUri) {
-        setProfileImageUri(savedImageUri);
-      }
+      setProfileImageUri(savedImageUri ?? null);
       
       const transformedUser: User = {
         ...userData,
@@ -79,6 +109,15 @@ const ProfileScreen: React.FC = () => {
         nomeUsuario: userData.nomeUsuario,
         email: userData.email,
         cpfUsuario: userData.cpfUsuario,
+        telefone: userData.telefone ?? '',
+        endereco: {
+          rua: userData.endereco?.rua ?? '',
+          numero: userData.endereco?.numero ?? '',
+          bairro: userData.endereco?.bairro ?? '',
+          cidade: userData.endereco?.cidade ?? '',
+          estado: userData.endereco?.estado ?? '',
+          pais: userData.endereco?.pais ?? '',
+        },
       });
     } catch (error) {
       console.error('Erro ao carregar dados do usuário:', error);
@@ -114,11 +153,13 @@ const ProfileScreen: React.FC = () => {
       setSaving(true);
       
       // Atualizar dados na API
-      const numericId = parseInt(authUser?.id || userId, 10);
+      const numericId = parseInt(resolvedUserId, 10);
       const updatedUser = await ApiService.updateProfile(numericId, {
         nomeUsuario: editData.nomeUsuario,
         email: editData.email,
         cpfUsuario: editData.cpfUsuario,
+        telefone: editData.telefone,
+        endereco: editData.endereco,
       });
       
       // Atualizar estado local
@@ -136,6 +177,8 @@ const ProfileScreen: React.FC = () => {
         cpfUsuario: newUser.cpfUsuario,
         tipo: newUser.tipo,
         profileImageUri: newUser.profileImageUri,
+        telefone: newUser.telefone,
+        endereco: newUser.endereco,
       });
       
       setIsEditing(false);
@@ -153,6 +196,15 @@ const ProfileScreen: React.FC = () => {
       nomeUsuario: user?.nomeUsuario || '',
       email: user?.email || '',
       cpfUsuario: user?.cpfUsuario || '',
+      telefone: user?.telefone || '',
+      endereco: {
+        rua: user?.endereco?.rua || '',
+        numero: user?.endereco?.numero || '',
+        bairro: user?.endereco?.bairro || '',
+        cidade: user?.endereco?.cidade || '',
+        estado: user?.endereco?.estado || '',
+        pais: user?.endereco?.pais || '',
+      },
     });
     setIsEditing(false);
   };
@@ -214,7 +266,7 @@ const ProfileScreen: React.FC = () => {
 
       if (!result.canceled && result.assets[0]) {
         const imageUri = result.assets[0].uri;
-        await ProfileImageService.saveProfileImage(userId, imageUri);
+        await ProfileImageService.saveProfileImage(resolvedUserId, imageUri);
         setProfileImageUri(imageUri);
         
         // Atualizar o objeto user com a nova imagem
@@ -244,7 +296,7 @@ const ProfileScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await ProfileImageService.deleteProfileImage(userId);
+              await ProfileImageService.deleteProfileImage(resolvedUserId);
               setProfileImageUri(null);
               
               // Atualizar o objeto user removendo a imagem
@@ -267,7 +319,105 @@ const ProfileScreen: React.FC = () => {
   };
 
   const formatCPF = (cpf: string) => {
-    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    const digits = (cpf || '').replace(/\D/g, '');
+    if (digits.length !== 11) {
+      return cpf || 'Não informado';
+    }
+    return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  };
+
+  const formatAddress = (address?: User['endereco']) => {
+    if (!address) {
+      return 'Não informado';
+    }
+
+    const parts = [
+      address.rua && address.numero
+        ? `${address.rua}, ${address.numero}`
+        : address.rua ?? '',
+      address.bairro ?? '',
+      address.cidade && address.estado
+        ? `${address.cidade} - ${address.estado}`
+        : address.cidade ?? address.estado ?? '',
+      address.pais ?? '',
+    ].filter((part) => part && part.trim().length > 0);
+
+    return parts.length > 0 ? parts.join(' • ') : 'Não informado';
+  };
+
+  const handleAddressChange = (
+    field: keyof EditProfileData['endereco'],
+    value: string,
+  ) => {
+    setEditData((prev) => ({
+      ...prev,
+      endereco: {
+        ...prev.endereco,
+        [field]: value,
+      },
+    }));
+  };
+
+  const getEnrollmentStatusLabel = (enrollment: Enrollment) => {
+    if (enrollment.status === 'concluido') {
+      return 'Concluído';
+    }
+    if (enrollment.status === 'cancelado') {
+      return 'Cancelado';
+    }
+
+    const progress = enrollment.progressoAulas || [];
+    if (progress.length === 0) {
+      return 'Não iniciado';
+    }
+    if (progress.every((item) => item.concluida)) {
+      return 'Concluído';
+    }
+    if (progress.some((item) => item.concluida)) {
+      return 'Em andamento';
+    }
+    return 'Não iniciado';
+  };
+
+  const getEnrollmentProgress = (enrollment: Enrollment) => {
+    const progress = enrollment.progressoAulas || [];
+    if (progress.length === 0) {
+      return 0;
+    }
+    const completed = progress.filter((item) => item.concluida).length;
+    return Math.round((completed / progress.length) * 100);
+  };
+
+  const handleCancelEnrollment = (enrollmentId: number) => {
+    Alert.alert(
+      'Cancelar inscrição',
+      'Tem certeza que deseja se desinscrever deste curso?',
+      [
+        { text: 'Não', style: 'cancel' },
+        {
+          text: 'Sim, cancelar',
+          style: 'destructive',
+          onPress: () => confirmCancelEnrollment(enrollmentId),
+        },
+      ],
+    );
+  };
+
+  const confirmCancelEnrollment = async (enrollmentId: number) => {
+    try {
+      setCancellingId(enrollmentId);
+      await ApiService.cancelarInscricao(enrollmentId);
+      Alert.alert('Pronto', 'Inscrição cancelada com sucesso.');
+      await loadUserData();
+    } catch (error: any) {
+      console.error('Erro ao cancelar inscrição:', error);
+      Alert.alert(
+        'Erro',
+        error?.message || 'Não foi possível cancelar a inscrição agora.',
+      );
+    } finally {
+      setCancellingId(null);
+    }
   };
 
   if (!isAuthenticated) {
@@ -357,7 +507,9 @@ const ProfileScreen: React.FC = () => {
                   <TextInput
                     style={styles.input}
                     value={editData.nomeUsuario}
-                    onChangeText={(text) => setEditData({...editData, nomeUsuario: text})}
+                    onChangeText={(text) =>
+                      setEditData((prev) => ({ ...prev, nomeUsuario: text }))
+                    }
                     placeholder="Digite seu nome completo"
                   />
                 </View>
@@ -367,7 +519,9 @@ const ProfileScreen: React.FC = () => {
                   <TextInput
                     style={styles.input}
                     value={editData.email}
-                    onChangeText={(text) => setEditData({...editData, email: text})}
+                    onChangeText={(text) =>
+                      setEditData((prev) => ({ ...prev, email: text }))
+                    }
                     placeholder="Digite seu email"
                     keyboardType="email-address"
                     autoCapitalize="none"
@@ -379,10 +533,72 @@ const ProfileScreen: React.FC = () => {
                   <TextInput
                     style={styles.input}
                     value={editData.cpfUsuario}
-                    onChangeText={(text) => setEditData({...editData, cpfUsuario: text.replace(/\D/g, '')})}
+                    onChangeText={(text) =>
+                      setEditData((prev) => ({
+                        ...prev,
+                        cpfUsuario: text.replace(/\D/g, ''),
+                      }))
+                    }
                     placeholder="Digite seu CPF"
                     keyboardType="numeric"
                     maxLength={11}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Telefone</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editData.telefone}
+                    onChangeText={(text) =>
+                      setEditData((prev) => ({ ...prev, telefone: text }))
+                    }
+                    placeholder="(00) 00000-0000"
+                    keyboardType="phone-pad"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Endereço</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editData.endereco.rua}
+                    onChangeText={(text) => handleAddressChange('rua', text)}
+                    placeholder="Rua"
+                  />
+                  <View style={styles.addressRow}>
+                    <TextInput
+                      style={[styles.input, styles.addressHalf]}
+                      value={editData.endereco.numero}
+                      onChangeText={(text) => handleAddressChange('numero', text)}
+                      placeholder="Número"
+                    />
+                    <TextInput
+                      style={[styles.input, styles.addressHalf]}
+                      value={editData.endereco.bairro}
+                      onChangeText={(text) => handleAddressChange('bairro', text)}
+                      placeholder="Bairro"
+                    />
+                  </View>
+                  <View style={styles.addressRow}>
+                    <TextInput
+                      style={[styles.input, styles.addressHalf]}
+                      value={editData.endereco.cidade}
+                      onChangeText={(text) => handleAddressChange('cidade', text)}
+                      placeholder="Cidade"
+                    />
+                    <TextInput
+                      style={[styles.input, styles.addressHalf]}
+                      value={editData.endereco.estado}
+                      onChangeText={(text) => handleAddressChange('estado', text)}
+                      placeholder="Estado"
+                    />
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    value={editData.endereco.pais}
+                    onChangeText={(text) => handleAddressChange('pais', text)}
+                    placeholder="País"
                   />
                 </View>
                 
@@ -433,6 +649,26 @@ const ProfileScreen: React.FC = () => {
                   </View>
                 </View>
                 
+                <View style={styles.infoItem}>
+                  <Ionicons name="call" size={20} color="#4a9eff" />
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Telefone</Text>
+                    <Text style={styles.infoValue}>
+                      {user?.telefone && user.telefone.trim().length > 0
+                        ? user.telefone
+                        : 'Não informado'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.infoItem}>
+                  <Ionicons name="location" size={20} color="#4a9eff" />
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Endereço</Text>
+                    <Text style={styles.infoValue}>{formatAddress(user?.endereco)}</Text>
+                  </View>
+                </View>
+                
                 <TouchableOpacity
                   style={styles.editButton}
                   onPress={handleEdit}
@@ -441,6 +677,86 @@ const ProfileScreen: React.FC = () => {
                   <Text style={styles.editButtonText}>Editar Informações</Text>
                 </TouchableOpacity>
               </View>
+            )}
+          </View>
+
+          {/* Enrollments */}
+          <View style={styles.coursesSection}>
+            <Text style={styles.sectionTitle}>Meus Cursos</Text>
+            {activeEnrollments.length === 0 ? (
+              <View style={styles.emptyCourses}>
+                <Ionicons name="book-outline" size={36} color="#4a9eff" />
+                <Text style={styles.emptyCoursesTitle}>
+                  Você ainda não está inscrito em cursos ativos.
+                </Text>
+                <Text style={styles.helperText}>
+                  Explore o catálogo e comece um novo curso agora mesmo.
+                </Text>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => navigation.navigate('CursosLista')}
+                >
+                  <Text style={styles.primaryButtonText}>Explorar cursos</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              activeEnrollments.map((enrollment) => (
+                <View key={enrollment.id} style={styles.enrollmentCard}>
+                  <View style={styles.enrollmentHeader}>
+                    {enrollment.curso.imagemCurso ? (
+                      <Image
+                        source={{ uri: enrollment.curso.imagemCurso }}
+                        style={styles.enrollmentImage}
+                      />
+                    ) : (
+                      <View style={styles.enrollmentImagePlaceholder}>
+                        <Ionicons name="school" size={20} color="#fff" />
+                      </View>
+                    )}
+                    <View style={styles.enrollmentInfoWrapper}>
+                      <Text style={styles.enrollmentCourse}>{enrollment.curso.nomeCurso}</Text>
+                      <Text style={styles.enrollmentStatus}>
+                        {getEnrollmentStatusLabel(enrollment)}
+                      </Text>
+                    </View>
+                    <Text style={styles.enrollmentProgress}>
+                      {getEnrollmentProgress(enrollment)}%
+                    </Text>
+                  </View>
+                  <View style={styles.enrollmentActions}>
+                    <TouchableOpacity
+                      style={styles.secondaryButton}
+                      onPress={() =>
+                        navigation.navigate('AulasCurso', {
+                          courseId: String(enrollment.curso.id),
+                        })
+                      }
+                    >
+                      <Ionicons name="play" size={18} color="#4a9eff" />
+                      <Text style={styles.secondaryButtonText}>Assistir</Text>
+                    </TouchableOpacity>
+                    {enrollment.status === 'ativo' && (
+                      <TouchableOpacity
+                        style={[
+                          styles.cancelEnrollmentButton,
+                          cancellingId === enrollment.id && styles.buttonDisabled,
+                        ]}
+                        onPress={() => handleCancelEnrollment(enrollment.id)}
+                        disabled={cancellingId === enrollment.id}
+                      >
+                        {cancellingId === enrollment.id ? (
+                          <ActivityIndicator size="small" color="#e74c3c" />
+                        ) : (
+                          <>
+                            <Ionicons name="close-circle" size={18} color="#e74c3c" />
+                            <Text style={styles.cancelEnrollmentText}>Desinscrever</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ))
             )}
           </View>
 
@@ -616,6 +932,24 @@ const styles = StyleSheet.create({
   infoSection: {
     marginBottom: 30,
   },
+  coursesSection: {
+    marginBottom: 30,
+  },
+  emptyCourses: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 18,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    alignItems: 'center',
+    gap: 10,
+  },
+  emptyCoursesTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -650,6 +984,77 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     fontWeight: '500',
+  },
+  enrollmentCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    marginTop: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+  },
+  enrollmentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  enrollmentImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    marginRight: 12,
+    backgroundColor: '#f0f0f0',
+  },
+  enrollmentImagePlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#4a9eff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  enrollmentInfoWrapper: {
+    flex: 1,
+  },
+  enrollmentCourse: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f1f1f',
+  },
+  enrollmentStatus: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+  enrollmentProgress: {
+    color: '#4a9eff',
+    fontWeight: '600',
+  },
+  enrollmentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    gap: 12,
+  },
+  cancelEnrollmentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e74c3c',
+    borderRadius: 25,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 6,
+  },
+  cancelEnrollmentText: {
+    color: '#e74c3c',
+    fontWeight: '600',
+    fontSize: 14,
   },
   editButton: {
     flexDirection: 'row',
@@ -695,6 +1100,53 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     backgroundColor: '#f9f9f9',
+  },
+  addressRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  addressHalf: {
+    flex: 1,
+  },
+  helperText: {
+    color: '#c0c0c0',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4a9eff',
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 25,
+    marginTop: 10,
+    gap: 8,
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#4a9eff',
+    borderRadius: 25,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 6,
+  },
+  secondaryButtonText: {
+    color: '#4a9eff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   editButtons: {
     flexDirection: 'row',
