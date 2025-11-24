@@ -9,6 +9,7 @@ import {
   Dimensions,
   ActivityIndicator,
   Modal,
+  Linking,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -60,6 +61,7 @@ const AulasCursoScreen: React.FC = () => {
   const [certificateAvailable, setCertificateAvailable] = useState(false);
   const [isCheckingCertificate, setIsCheckingCertificate] = useState(false);
   const [isDownloadingCertificate, setIsDownloadingCertificate] = useState(false);
+  const [youtubeFallbackUrl, setYoutubeFallbackUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -158,9 +160,11 @@ const AulasCursoScreen: React.FC = () => {
     return null;
   };
 
-  const buildPlayableVideoUrl = (rawUrl: string | null | undefined): string | null => {
+  const buildPlayableVideoUrl = (
+    rawUrl: string | null | undefined,
+  ): { playableUrl: string | null; fallbackWatchUrl: string | null } => {
     if (!rawUrl) {
-      return null;
+      return { playableUrl: null, fallbackWatchUrl: null };
     }
 
     const trimmedUrl = rawUrl.trim();
@@ -174,22 +178,51 @@ const AulasCursoScreen: React.FC = () => {
       }
 
       let videoId = '';
+      const originalParams = urlObj ? new URLSearchParams(urlObj.search) : null;
 
       if (trimmedUrl.includes('youtu.be')) {
         videoId = urlObj?.pathname.replace('/', '') ?? '';
       } else if (urlObj?.searchParams.get('v')) {
         videoId = urlObj?.searchParams.get('v') ?? '';
-      } else if (trimmedUrl.includes('/embed/')) {
-        const parts = trimmedUrl.split('/embed/');
-        videoId = parts[1]?.split('?')[0] ?? '';
+      } else if (urlObj?.pathname?.includes('/embed/')) {
+        videoId = urlObj.pathname.split('/embed/')[1]?.split('?')[0] ?? '';
       }
 
       if (videoId.length > 0) {
-        return `https://www.youtube.com/embed/${videoId}?autoplay=1&modestbranding=1&playsinline=1&rel=0`;
+        const paramsToKeep = ['si', 'list', 'index', 'start', 'end'];
+        const watchParams = new URLSearchParams();
+        const embedParams = new URLSearchParams();
+
+        paramsToKeep.forEach((key) => {
+          const value = originalParams?.get(key);
+          if (value) {
+            embedParams.set(key, value);
+            watchParams.set(key, value);
+          }
+        });
+
+        embedParams.set('autoplay', '1');
+        embedParams.set('modestbranding', '1');
+        embedParams.set('playsinline', '1');
+        embedParams.set('rel', '0');
+
+        const embedQuery = embedParams.toString();
+        const watchQuery = watchParams.toString();
+
+        const watchUrl = watchQuery
+          ? `https://www.youtube.com/watch?v=${videoId}&${watchQuery}`
+          : `https://www.youtube.com/watch?v=${videoId}`;
+        const embedUrl = embedQuery
+          ? `https://www.youtube.com/embed/${videoId}?${embedQuery}`
+          : `https://www.youtube.com/embed/${videoId}`;
+
+        // Prefer the watch URL inside o WebView. Alguns vídeos bloqueiam incorporação (erro 153),
+        // mas a página normal do YouTube continua reproduzindo dentro do WebView.
+        return { playableUrl: watchUrl, fallbackWatchUrl: embedUrl };
       }
     }
 
-    return trimmedUrl;
+    return { playableUrl: trimmedUrl, fallbackWatchUrl: null };
   };
 
   const handleOpenLesson = (lesson: Lesson) => {
@@ -200,7 +233,7 @@ const AulasCursoScreen: React.FC = () => {
       return;
     }
 
-    const playableUrl = buildPlayableVideoUrl(lesson.videoUrl);
+    const { playableUrl, fallbackWatchUrl } = buildPlayableVideoUrl(lesson.videoUrl);
 
     if (!playableUrl) {
       NotificationService.showError('Não conseguimos identificar o vídeo desta aula.');
@@ -210,6 +243,7 @@ const AulasCursoScreen: React.FC = () => {
     setCurrentLessonTitle(lesson.nomeAula);
     setIsVideoLoading(true);
     setVideoUrl(playableUrl);
+    setYoutubeFallbackUrl(fallbackWatchUrl);
     setIsVideoModalVisible(true);
   };
 
@@ -562,7 +596,11 @@ const AulasCursoScreen: React.FC = () => {
       <Modal
         visible={isVideoModalVisible}
         animationType="slide"
-        onRequestClose={() => setIsVideoModalVisible(false)}
+        onRequestClose={() => {
+          setIsVideoModalVisible(false);
+          setVideoUrl(null);
+          setYoutubeFallbackUrl(null);
+        }}
         transparent
       >
         <View style={styles.videoModalOverlay}>
@@ -574,6 +612,7 @@ const AulasCursoScreen: React.FC = () => {
                 onPress={() => {
                   setIsVideoModalVisible(false);
                   setVideoUrl(null);
+                  setYoutubeFallbackUrl(null);
                   setIsVideoLoading(false);
                 }}
               >
@@ -593,8 +632,22 @@ const AulasCursoScreen: React.FC = () => {
                   onLoadStart={() => setIsVideoLoading(true)}
                   onLoadEnd={() => setIsVideoLoading(false)}
                   onError={() => {
+                    if (youtubeFallbackUrl) {
+                      setIsVideoModalVisible(false);
+                      setVideoUrl(null);
+                      setYoutubeFallbackUrl(null);
+                      setIsVideoLoading(false);
+
+                      Linking.openURL(youtubeFallbackUrl).catch(() => {
+                        NotificationService.showError(
+                          'Não foi possível carregar o vídeo no player integrado. Abrir no YouTube também falhou.',
+                        );
+                      });
+                      return;
+                    }
                     setIsVideoModalVisible(false);
                     setVideoUrl(null);
+                    setYoutubeFallbackUrl(null);
                     NotificationService.showError(
                       'Não foi possível carregar o vídeo desta aula.',
                     );
