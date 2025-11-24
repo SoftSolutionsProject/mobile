@@ -447,7 +447,11 @@ class ApiService {
     try {
       const headers = await this.getAuthHeaders();
       await axios.post(`${this.API_URL}/inscricoes/cursos/${idCurso}`, {}, headers);
-    } catch (error) {
+    } catch (error: any) {
+      // Se já está inscrito, tratamos como sucesso para evitar fluxo quebrado
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        return;
+      }
       this.handleError(error);
     }
   }
@@ -456,7 +460,11 @@ class ApiService {
     try {
       const headers = await this.getAuthHeaders();
       await axios.delete(`${this.API_URL}/inscricoes/${idInscricao}/cancelar`, headers);
-    } catch (error) {
+    } catch (error: any) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        // Já não existe inscrição, consideramos sucesso idempotente
+        return;
+      }
       this.handleError(error);
     }
   }

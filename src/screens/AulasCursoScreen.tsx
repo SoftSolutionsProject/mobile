@@ -124,11 +124,18 @@ const AulasCursoScreen: React.FC = () => {
         setIsLoading(true);
       }
 
-      const [courseResponse, modulesResponse, enrollmentsResponse] = await Promise.all([
+      const shouldForceEnrollments = !hasLoadedOnce.current || !isSameCourse || !enrollment;
+      const [courseResponse, modulesResponse] = await Promise.all([
         ApiService.obterCurso(Number(courseId)),
         ApiService.listarModulosEAulasDoCurso(Number(courseId)),
-        refreshEnrollments(false),
       ]);
+
+      let enrollmentsResponse = enrollments;
+      try {
+        enrollmentsResponse = await refreshEnrollments(shouldForceEnrollments);
+      } catch (enrollError) {
+        console.warn('Não foi possível atualizar inscrições no momento, usando cache local.');
+      }
 
       const sortedModules = [...modulesResponse]
         .sort((a, b) => a.id - b.id)
@@ -150,6 +157,7 @@ const AulasCursoScreen: React.FC = () => {
         ) || null;
 
       if (!activeEnrollment) {
+        setIsLoading(false);
         Alert.alert(
           'Acesso restrito',
           'Você precisa estar inscrito neste curso para acessar as aulas.',

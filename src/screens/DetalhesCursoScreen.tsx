@@ -142,7 +142,16 @@ const DetalhesCursoScreen: React.FC = () => {
       setIsEnrolling(true);
       await ApiService.inscreverUsuario(Number(courseId));
       NotificationService.showSuccess('Inscrição realizada com sucesso!');
-      await Promise.all([refreshEnrollments(true), loadData()]);
+
+      // Força refresh das inscrições antes de navegar para evitar falso "acesso restrito".
+      const updatedEnrollments = await refreshEnrollments(true);
+      const hasEnrollment = updatedEnrollments.some(
+        (item) => item.curso.id === Number(courseId) && item.status === 'ativo',
+      );
+      if (!hasEnrollment) {
+        await loadData();
+      }
+
       navigation.navigate('AulasCurso', { courseId: String(courseId) });
     } catch (error: any) {
       console.error('Erro ao se inscrever:', error);
