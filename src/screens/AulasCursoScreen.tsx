@@ -130,11 +130,18 @@ const AulasCursoScreen: React.FC = () => {
         refreshEnrollments(false),
       ]);
 
+      const sortedModules = [...modulesResponse]
+        .sort((a, b) => a.id - b.id)
+        .map((module) => ({
+          ...module,
+          aulas: [...module.aulas].sort((a, b) => a.id - b.id),
+        }));
+
       setCourse(courseResponse);
       setCachedCourse(courseResponse);
-      setModules(modulesResponse);
-      setCachedModules(modulesResponse);
-      CourseCache.set(Number(courseId), { course: courseResponse, modules: modulesResponse });
+      setModules(sortedModules);
+      setCachedModules(sortedModules);
+      CourseCache.set(Number(courseId), { course: courseResponse, modules: sortedModules });
       setLastCourseId(String(courseId));
 
       const activeEnrollment =
@@ -174,8 +181,8 @@ const AulasCursoScreen: React.FC = () => {
           });
       }
 
-      const firstIncompleteLesson = findFirstIncompleteLesson(modulesResponse, completed);
-      setCurrentLessonId(firstIncompleteLesson ?? modulesResponse[0]?.aulas[0]?.id ?? null);
+      const firstIncompleteLesson = findFirstIncompleteLesson(sortedModules, completed);
+      setCurrentLessonId(firstIncompleteLesson ?? sortedModules[0]?.aulas[0]?.id ?? null);
       hasLoadedOnce.current = true;
       setIsLoading(false);
 

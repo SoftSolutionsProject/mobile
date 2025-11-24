@@ -88,7 +88,16 @@ const DetalhesCursoScreen: React.FC = () => {
         ApiService.listarAvaliacoesPorCurso(Number(courseId)),
       ]);
 
-      setCourse(courseResponse);
+      const sortedModules = Array.isArray(courseResponse.modulos)
+        ? [...courseResponse.modulos]
+            .sort((a, b) => a.id - b.id)
+            .map((module) => ({
+              ...module,
+              aulas: [...module.aulas].sort((a, b) => a.id - b.id),
+            }))
+        : [];
+
+      setCourse({ ...courseResponse, modulos: sortedModules });
       setQuantityEnrolled(countResponse?.quantidadeInscritos ?? 0);
       setReviews(reviewsResponse);
       CourseCache.set(Number(courseId), { course: courseResponse });
