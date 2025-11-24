@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,10 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Enrollment, RootStackParamList, User } from '../types';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -48,6 +49,10 @@ const ProfileScreen: React.FC = () => {
   const { isAuthenticated, user: authUser, updateUser } = useAuth();
   const { enrollments, refreshEnrollments } = useCourses();
   const resolvedUserId = authUser?.id || userId || '0';
+  const hasLoadedOnce = useRef(false);
+  const cacheTimestampRef = useRef<number | null>(null);
+  const CACHE_KEY = `@softsolutions:profile-cache-${resolvedUserId}`;
+  const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
   
   const [user, setUser] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -76,18 +81,112 @@ const ProfileScreen: React.FC = () => {
   );
 
   useEffect(() => {
-    if (isAuthenticated && authUser) {
-      loadUserData();
-    } else {
-      setLoading(false);
-    }
+    const restoreCache = async () => {
+      try {
+        const cached = await AsyncStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached) as {
+            user: User;
+            dashboard: any;
+            profileImageUri: string | null;
+            timestamp: number;
+          };
+          if (
+            parsed?.user &&
+            parsed?.dashboard &&
+            parsed?.timestamp &&
+            Date.now() - parsed.timestamp < CACHE_TTL
+          ) {
+            setUser(parsed.user);
+            setEditData({
+              nomeUsuario: parsed.user.nomeUsuario,
+              email: parsed.user.email,
+              cpfUsuario: parsed.user.cpfUsuario,
+              telefone: parsed.user.telefone ?? '',
+              endereco: {
+                rua: parsed.user.endereco?.rua ?? '',
+                numero: parsed.user.endereco?.numero ?? '',
+                bairro: parsed.user.endereco?.bairro ?? '',
+                cidade: parsed.user.endereco?.cidade ?? '',
+                estado: parsed.user.endereco?.estado ?? '',
+                pais: parsed.user.endereco?.pais ?? '',
+              },
+            });
+            setDashboardData(parsed.dashboard);
+            setProfileImageUri(parsed.profileImageUri ?? null);
+            cacheTimestampRef.current = parsed.timestamp;
+            hasLoadedOnce.current = true;
+            setLoading(false);
+          }
+        }
+      } catch (error) {
+        console.warn('Falha ao restaurar cache do perfil', error);
+      }
+    };
+
+    restoreCache().finally(() => {
+      if (isAuthenticated && authUser) {
+        const shouldShowSpinner = !hasLoadedOnce.current;
+        loadUserData(true, shouldShowSpinner);
+      } else {
+        setLoading(false);
+      }
+    });
   }, [isAuthenticated, authUser]);
 
-  const loadUserData = async () => {
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated || !hasLoadedOnce.current) {
+        return;
+      }
+      loadUserData(false, false);
+    }, [isAuthenticated]),
+  );
+
+  const persistCache = async (
+    data: { user: User; dashboard: any; profileImageUri: string | null },
+  ) => {
     try {
-      setLoading(true);
+      const timestamp = Date.now();
+      cacheTimestampRef.current = timestamp;
+      await AsyncStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify({ ...data, timestamp }),
+      );
+    } catch (error) {
+      console.warn('Não foi possível salvar cache do perfil', error);
+    }
+  };
+
+  const loadUserData = async (forceRefresh = false, showSpinner = true) => {
+    try {
+      const now = Date.now();
+      if (
+        !forceRefresh &&
+        cacheTimestampRef.current &&
+        now - cacheTimestampRef.current < CACHE_TTL &&
+        user &&
+        dashboardData
+      ) {
+        if (showSpinner) {
+          setLoading(false);
+        }
+        setTimeout(() => {
+          loadUserData(true, false).catch((err) =>
+            console.warn('Refresh silencioso do perfil falhou', err),
+          );
+        }, 0);
+        return;
+      }
+
+      if (showSpinner) {
+        setLoading(true);
+      }
       const numericId = parseInt(resolvedUserId, 10);
-      const enrollmentsPromise = refreshEnrollments(true);
+      // Atualiza inscrições sem travar a UI.
+      refreshEnrollments(forceRefresh).catch((err) =>
+        console.warn('Falha ao atualizar inscrições no perfil', err),
+      );
 
       const [userData, dashboard, savedImageUri] = await Promise.all([
         ApiService.getProfile(numericId),
@@ -95,7 +194,6 @@ const ProfileScreen: React.FC = () => {
         ProfileImageService.getProfileImage(resolvedUserId),
       ]);
       
-      await enrollmentsPromise;
       setDashboardData(dashboard);
       setProfileImageUri(savedImageUri ?? null);
       
@@ -119,11 +217,15 @@ const ProfileScreen: React.FC = () => {
           pais: userData.endereco?.pais ?? '',
         },
       });
+      hasLoadedOnce.current = true;
+      persistCache({ user: transformedUser, dashboard, profileImageUri: savedImageUri ?? null });
     } catch (error) {
       console.error('Erro ao carregar dados do usuário:', error);
       Alert.alert('Erro', 'Erro ao carregar dados do usuário');
     } finally {
-      setLoading(false);
+      if (showSpinner) {
+        setLoading(false);
+      }
     }
   };
 
