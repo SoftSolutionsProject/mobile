@@ -152,7 +152,6 @@ const AulasCursoScreen: React.FC = () => {
       }
 
       setEnrollment(activeEnrollment);
-      await verifyCertificateAvailability(activeEnrollment.id);
 
       const completed = new Set<number>(
         activeEnrollment.progressoAulas
@@ -163,9 +162,10 @@ const AulasCursoScreen: React.FC = () => {
 
       const needsProgress =
         !progressInfo || !isSameCourse || progressInfo?.progresso === undefined;
+      let progressResponseLocal = progressInfo;
       if (needsProgress) {
-        const progressResponse = await ApiService.obterProgresso(activeEnrollment.id);
-        setProgressInfo(progressResponse);
+        progressResponseLocal = await ApiService.obterProgresso(activeEnrollment.id);
+        setProgressInfo(progressResponseLocal);
       } else {
         ApiService.obterProgresso(activeEnrollment.id)
           .then((progressResponse) => setProgressInfo(progressResponse))
@@ -178,6 +178,19 @@ const AulasCursoScreen: React.FC = () => {
       setCurrentLessonId(firstIncompleteLesson ?? modulesResponse[0]?.aulas[0]?.id ?? null);
       hasLoadedOnce.current = true;
       setIsLoading(false);
+
+      const totalLessonsLocal = modulesResponse.reduce(
+        (total, module) => total + module.aulas.length,
+        0,
+      );
+      const progressPercentLocal =
+        progressResponseLocal?.progresso ??
+        (totalLessonsLocal === 0 ? 0 : (completed.size / totalLessonsLocal) * 100);
+      if (progressPercentLocal >= 100) {
+        await verifyCertificateAvailability(activeEnrollment.id);
+      } else {
+        setCertificateAvailable(false);
+      }
 
       CourseCache.set(Number(courseId), { course: courseResponse, modules: modulesResponse });
     } catch (error: any) {
@@ -565,6 +578,7 @@ const AulasCursoScreen: React.FC = () => {
                   </View>
                   {module.aulas.map((lesson) => {
                     const isCompleted = completedLessons.has(lesson.id);
+                    const disableUncomplete = isCertificateUnlocked;
                     const isCurrent = currentLessonId === lesson.id;
 
                     return (
@@ -606,7 +620,7 @@ const AulasCursoScreen: React.FC = () => {
                           </View>
                         </TouchableOpacity>
                         <View style={styles.lessonActions}>
-                          {isCompleted ? (
+                          {isCompleted && !disableUncomplete ? (
                             <TouchableOpacity
                               style={[styles.markButton, styles.markButtonOutlined]}
                               onPress={() => handleUncompleteLesson(lesson)}
@@ -614,7 +628,7 @@ const AulasCursoScreen: React.FC = () => {
                               <Ionicons name="close" size={16} color="#e74c3c" />
                               <Text style={styles.markButtonOutlinedText}>Desfazer</Text>
                             </TouchableOpacity>
-                          ) : (
+                          ) : !isCompleted ? (
                             <TouchableOpacity
                               style={styles.markButton}
                               onPress={() => handleCompleteLesson(lesson)}
@@ -622,7 +636,7 @@ const AulasCursoScreen: React.FC = () => {
                               <Ionicons name="checkmark" size={16} color="#fff" />
                               <Text style={styles.markButtonText}>Concluir</Text>
                             </TouchableOpacity>
-                          )}
+                          ) : null}
                         </View>
                       </View>
                     );
