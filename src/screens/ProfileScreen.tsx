@@ -207,7 +207,7 @@ const ProfileScreen: React.FC = () => {
         nomeUsuario: userData.nomeUsuario,
         email: userData.email,
         cpfUsuario: userData.cpfUsuario,
-        telefone: userData.telefone ?? '',
+        telefone: formatPhone(userData.telefone ?? ''),
         endereco: {
           rua: userData.endereco?.rua ?? '',
           numero: userData.endereco?.numero ?? '',
@@ -246,11 +246,6 @@ const ProfileScreen: React.FC = () => {
       Alert.alert('Erro', 'Email inválido');
       return;
     }
-    if (!editData.cpfUsuario.trim()) {
-      Alert.alert('Erro', 'CPF é obrigatório');
-      return;
-    }
-
     try {
       setSaving(true);
       
@@ -298,7 +293,7 @@ const ProfileScreen: React.FC = () => {
       nomeUsuario: user?.nomeUsuario || '',
       email: user?.email || '',
       cpfUsuario: user?.cpfUsuario || '',
-      telefone: user?.telefone || '',
+      telefone: formatPhone(user?.telefone || ''),
       endereco: {
         rua: user?.endereco?.rua || '',
         numero: user?.endereco?.numero || '',
@@ -426,6 +421,16 @@ const ProfileScreen: React.FC = () => {
       return cpf || 'Não informado';
     }
     return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  };
+
+  const formatPhone = (phone: string) => {
+    const digits = (phone || '').replace(/\D/g, '').slice(0, 11);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    }
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
   };
 
   const formatAddress = (address?: User['endereco']) => {
@@ -632,19 +637,11 @@ const ProfileScreen: React.FC = () => {
                 
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>CPF</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editData.cpfUsuario}
-                    onChangeText={(text) =>
-                      setEditData((prev) => ({
-                        ...prev,
-                        cpfUsuario: text.replace(/\D/g, ''),
-                      }))
-                    }
-                    placeholder="Digite seu CPF"
-                    keyboardType="numeric"
-                    maxLength={11}
-                  />
+                  <View style={[styles.input, styles.readOnlyInput]}>
+                    <Text style={styles.readOnlyText}>
+                      {formatCPF(editData.cpfUsuario) || 'Não informado'}
+                    </Text>
+                  </View>
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -653,10 +650,11 @@ const ProfileScreen: React.FC = () => {
                     style={styles.input}
                     value={editData.telefone}
                     onChangeText={(text) =>
-                      setEditData((prev) => ({ ...prev, telefone: text }))
+                      setEditData((prev) => ({ ...prev, telefone: formatPhone(text) }))
                     }
                     placeholder="(00) 00000-0000"
                     keyboardType="phone-pad"
+                    maxLength={15}
                   />
                 </View>
 
@@ -697,7 +695,7 @@ const ProfileScreen: React.FC = () => {
                     />
                   </View>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, styles.countryInput]}
                     value={editData.endereco.pais}
                     onChangeText={(text) => handleAddressChange('pais', text)}
                     placeholder="País"
@@ -1203,6 +1201,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#f9f9f9',
   },
+  readOnlyInput: {
+    backgroundColor: '#f1f1f1',
+    borderColor: '#e0e0e0',
+  },
+  readOnlyText: {
+    color: '#666',
+    fontSize: 15,
+  },
   addressRow: {
     flexDirection: 'row',
     gap: 10,
@@ -1210,6 +1216,9 @@ const styles = StyleSheet.create({
   },
   addressHalf: {
     flex: 1,
+  },
+  countryInput: {
+    marginTop: 8,
   },
   helperText: {
     color: '#c0c0c0',

@@ -17,6 +17,7 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Course, RootStackParamList } from '../types';
 import { useCourses } from '../contexts/CoursesContext';
+import { useAuth } from '../contexts/AuthContext';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -25,6 +26,7 @@ const placeholderInstructorImage = require('../assets/images/perfil.png');
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
+  const { isAuthenticated } = useAuth();
   const { courses, isLoadingCourses, coursesError, refreshCourses } = useCourses();
 
   useFocusEffect(
@@ -138,7 +140,7 @@ const HomeScreen: React.FC = () => {
         <View style={styles.heroSection}>
           <View style={styles.heroContent}>
             <Text style={styles.heroTitle}>
-              Transforme sua jornada profissional com a Soft Solutions
+              Transforme sua Carreira em Tecnologia
             </Text>
             <Text style={styles.heroSubtitle}>
               Aprenda com especialistas, acompanhe seu progresso e conquiste certificados com reconhecimento no mercado.
@@ -150,29 +152,25 @@ const HomeScreen: React.FC = () => {
                 <Text style={styles.metricLabel}>Alunos Impactados</Text>
               </View>
               <View style={styles.metric}>
-                <Text style={styles.metricNumber}>60+</Text>
-                <Text style={styles.metricLabel}>Cursos Disponíveis</Text>
+                <Text style={styles.metricNumber}>100%</Text>
+                <Text style={styles.metricLabel}>Cursos Online</Text>
               </View>
               <View style={styles.metric}>
-                <Text style={styles.metricNumber}>24/7</Text>
-                <Text style={styles.metricLabel}>Suporte Especializado</Text>
+                <Text style={styles.metricNumber}>∞</Text>
+                <Text style={styles.metricLabel}>Acesso Vitalício</Text>
               </View>
             </View>
 
-            <View style={styles.ctaContainer}>
-              <TouchableOpacity
-                style={styles.ctaButton}
-                onPress={() => navigation.navigate('CursosLista')}
-              >
-                <Text style={styles.ctaButtonText}>Explorar Cursos</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => navigation.navigate('Login')}
-              >
-                <Text style={styles.secondaryButtonText}>Entrar</Text>
-              </TouchableOpacity>
-            </View>
+            {!isAuthenticated && (
+              <View style={styles.ctaContainer}>
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={() => navigation.navigate('Login')}
+                >
+                  <Text style={styles.secondaryButtonText}>Iniciar Jornada</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
 
