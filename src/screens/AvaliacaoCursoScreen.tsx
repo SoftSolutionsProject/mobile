@@ -8,6 +8,10 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import {
   useNavigation,
@@ -168,70 +172,86 @@ const AvaliacaoCursoScreen: React.FC = () => {
   }
 
   return (
-    <View style={styles.container}>
-      <Header showBackButton title="Avaliar Curso" />
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.content}>
-          {/* Course Info */}
-          <View style={styles.courseInfo}>
-            <Text style={styles.courseTitle}>{courseName}</Text>
-            <Text style={styles.courseSubtitle}>
-              {existingAvaliacao ? 'Atualize sua avaliação' : 'Avalie este curso'}
-            </Text>
-          </View>
-
-          {/* Rating Section */}
-          <View style={styles.ratingSection}>
-            <Text style={styles.sectionTitle}>Sua Avaliação</Text>
-            <View style={styles.starsContainer}>
-              {renderStars()}
-            </View>
-            <Text style={styles.ratingText}>
-              {rating === 0 ? 'Selecione uma nota' : 
-               rating === 1 ? 'Péssimo' :
-               rating === 2 ? 'Ruim' :
-               rating === 3 ? 'Regular' :
-               rating === 4 ? 'Bom' : 'Excelente'}
-            </Text>
-          </View>
-
-          {/* Comment Section */}
-          <View style={styles.commentSection}>
-            <Text style={styles.sectionTitle}>Comentário</Text>
-            <TextInput
-              style={styles.commentInput}
-              value={comment}
-              onChangeText={setComment}
-              placeholder="Conte sua experiência com este curso..."
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-            />
-            <Text style={styles.commentHint}>
-              Mínimo 10 caracteres
-            </Text>
-          </View>
-
-          {/* Submit Button */}
-          <View style={styles.submitSection}>
-            <TouchableOpacity
-              style={[styles.submitButton, isSaving && styles.buttonDisabled]}
-              onPress={handleSubmit}
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.submitButtonText}>
-                  {existingAvaliacao ? 'Atualizar Avaliação' : 'Enviar Avaliação'}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 40}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.flexFill}>
+          <Header showBackButton title="Avaliar Curso" />
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+          >
+            <View style={styles.content}>
+              {/* Course Info */}
+              <View style={styles.courseInfo}>
+                <Text style={styles.courseTitle}>{courseName}</Text>
+                <Text style={styles.courseSubtitle}>
+                  {existingAvaliacao ? 'Atualize sua avaliação' : 'Avalie este curso'}
                 </Text>
-              )}
-            </TouchableOpacity>
-          </View>
+              </View>
+
+              {/* Rating Section */}
+              <View style={styles.ratingSection}>
+                <Text style={styles.sectionTitle}>Sua Avaliação</Text>
+                <View style={styles.starsContainer}>
+                  {renderStars()}
+                </View>
+                <Text style={styles.ratingText}>
+                  {rating === 0 ? 'Selecione uma nota' : 
+                   rating === 1 ? 'Péssimo' :
+                   rating === 2 ? 'Ruim' :
+                   rating === 3 ? 'Regular' :
+                   rating === 4 ? 'Bom' : 'Excelente'}
+                </Text>
+              </View>
+
+              {/* Comment Section */}
+              <View style={styles.commentSection}>
+                <Text style={styles.sectionTitle}>Comentário</Text>
+                <TextInput
+                  style={styles.commentInput}
+                  value={comment}
+                  onChangeText={setComment}
+                  placeholder="Conte sua experiência com este curso..."
+                  multiline
+                  numberOfLines={6}
+                  textAlignVertical="top"
+                  scrollEnabled
+                  returnKeyType="done"
+                />
+                <Text style={styles.commentHint}>
+                  Mínimo 10 caracteres
+                </Text>
+              </View>
+
+              {/* Submit Button */}
+              <View style={styles.submitSection}>
+                <TouchableOpacity
+                  style={[styles.submitButton, isSaving && styles.buttonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.submitButtonText}>
+                      {existingAvaliacao ? 'Atualizar Avaliação' : 'Enviar Avaliação'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+          <Footer />
         </View>
-      </ScrollView>
-      <Footer />
-    </View>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -241,6 +261,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 32,
+  },
+  flexFill: {
     flex: 1,
   },
   content: {
