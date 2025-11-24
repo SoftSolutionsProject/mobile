@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,12 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  RouteProp,
+  useFocusEffect,
+} from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -32,7 +37,7 @@ const placeholderInstructorImage = require('../assets/images/perfil.png');
 const DetalhesCursoScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RoutePropType>();
-  const { courseId } = route.params;
+  const { courseId, refreshToken } = route.params;
   const { isAuthenticated } = useAuth();
   const { enrollments, refreshEnrollments } = useCourses();
 
@@ -41,6 +46,7 @@ const DetalhesCursoScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isEnrolling, setIsEnrolling] = useState<boolean>(false);
   const [quantityEnrolled, setQuantityEnrolled] = useState<number>(0);
+  const hasLoadedOnce = useRef(false);
 
   const isEnrolled = useMemo(() => {
     return enrollments.some(
@@ -51,7 +57,7 @@ const DetalhesCursoScreen: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [courseId]);
+  }, [courseId, refreshToken, loadData]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -59,7 +65,7 @@ const DetalhesCursoScreen: React.FC = () => {
     }
   }, [isAuthenticated, refreshEnrollments]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
       const [courseResponse, countResponse, reviewsResponse] = await Promise.all([
@@ -78,9 +84,22 @@ const DetalhesCursoScreen: React.FC = () => {
         error?.message || 'Não foi possível carregar as informações do curso.',
       );
     } finally {
+      hasLoadedOnce.current = true;
       setIsLoading(false);
     }
-  };
+  }, [courseId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated) {
+        return;
+      }
+
+      if (hasLoadedOnce.current) {
+        loadData();
+      }
+    }, [isAuthenticated, loadData]),
+  );
 
   const handleEnroll = async () => {
     if (!isAuthenticated) {
@@ -309,13 +328,8 @@ const DetalhesCursoScreen: React.FC = () => {
                     </Text>
                   </View>
                   {modulo.aulas.map((aula) => (
-                    <TouchableOpacity
-                      key={aula.id}
-                      style={styles.lessonRow}
-                      onPress={() => handleOpenVideo(aula.videoUrl)}
-                    >
+                    <View key={aula.id} style={styles.lessonRow}>
                       <View style={styles.lessonInfo}>
-                        <Ionicons name="play-circle" size={20} color="#4a9eff" />
                         <View style={styles.lessonTextGroup}>
                           <Text style={styles.lessonTitle}>{aula.nomeAula}</Text>
                           <Text style={styles.lessonDuration}>
@@ -327,8 +341,7 @@ const DetalhesCursoScreen: React.FC = () => {
                           </Text>
                         </View>
                       </View>
-                      <Ionicons name="open-outline" size={18} color="#4a9eff" />
-                    </TouchableOpacity>
+                    </View>
                   ))}
                 </View>
               ))
@@ -565,14 +578,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
   },
   lessonTextGroup: {
     gap: 4,
+    flex: 1,
   },
   lessonTitle: {
     color: '#f0f0f0',
     fontSize: 14,
     fontWeight: '500',
+    flexShrink: 1,
+    flexWrap: 'wrap',
   },
   lessonDuration: {
     color: '#a0a0a0',

@@ -136,7 +136,7 @@ export type RootStackParamList = {
   Contato: undefined;
   Certificados: undefined;
   CursosLista: undefined;
-  DetalhesCurso: { courseId: string };
+  DetalhesCurso: { courseId: string; refreshToken?: string };
   AulasCurso: { courseId: string };
   AvaliacaoCurso: { courseId: string };
   Dashboard: undefined;

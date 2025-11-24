@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,12 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  RouteProp,
+  useFocusEffect,
+} from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types';
 import Header from '../components/Header';
@@ -34,15 +39,7 @@ const AvaliacaoCursoScreen: React.FC = () => {
   const [existingAvaliacao, setExistingAvaliacao] = useState<any>(null);
   const [courseName, setCourseName] = useState('');
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadData();
-    } else {
-      setIsLoading(false);
-    }
-  }, [isAuthenticated, courseId]);
-
-  const loadData = async () => {
+  const loadData = React.useCallback(async () => {
     try {
       setIsLoading(true);
       
@@ -66,7 +63,18 @@ const AvaliacaoCursoScreen: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [courseId]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!isAuthenticated) {
+        setIsLoading(false);
+        return;
+      }
+
+      loadData();
+    }, [isAuthenticated, loadData]),
+  );
 
   const handleRatingPress = (selectedRating: number) => {
     setRating(selectedRating);
@@ -101,8 +109,11 @@ const AvaliacaoCursoScreen: React.FC = () => {
         await ApiService.avaliarCurso(avaliacaoData);
         Alert.alert('Sucesso', 'Avaliação enviada com sucesso!');
       }
-      
-      navigation.goBack();
+
+      navigation.navigate('DetalhesCurso', {
+        courseId: String(courseId),
+        refreshToken: `${Date.now()}`,
+      });
     } catch (error: any) {
       console.error('Erro ao salvar avaliação:', error);
       Alert.alert('Erro', error.message || 'Erro ao salvar avaliação');
