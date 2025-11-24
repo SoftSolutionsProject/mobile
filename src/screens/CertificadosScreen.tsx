@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,10 @@ import {
   Modal,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -22,6 +23,8 @@ import { useCourses } from '../contexts/CoursesContext';
 import { Certificate, Enrollment, RootStackParamList } from '../types';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
+const CERTIFICATES_CACHE_KEY = '@softsolutions:certificates-cache';
+const CERTIFICATES_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 const CertificadosScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -33,29 +36,142 @@ const CertificadosScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
+  const [certificateCache, setCertificateCache] = useState<Record<number, boolean>>({});
+  const hasLoadedOnce = useRef(false);
+  const certificatesRef = useRef<Certificate[]>([]);
+  const lastCacheSyncRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      loadCertificates();
-    } else {
-      setIsLoading(false);
-    }
+    certificatesRef.current = certificates;
+  }, [certificates]);
+
+  useEffect(() => {
+    const restoreCache = async () => {
+      try {
+        const cached = await AsyncStorage.getItem(CERTIFICATES_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached) as { data: Certificate[]; timestamp: number };
+          const isFresh =
+            parsed?.timestamp && Date.now() - parsed.timestamp < CERTIFICATES_CACHE_TTL;
+          if (parsed?.data && Array.isArray(parsed.data)) {
+            setCertificates(parsed.data);
+            if (parsed.timestamp) {
+              lastCacheSyncRef.current = parsed.timestamp;
+            }
+            hasLoadedOnce.current = true;
+            setIsLoading(false);
+            // Mesmo com cache fresco, dispare refresh em background sem spinner.
+            if (isAuthenticated) {
+              setTimeout(() => {
+                loadCertificates(true, false, false).catch((err) =>
+                  console.warn('Refresh silencioso de certificados falhou', err),
+                );
+              }, 0);
+            }
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn('Falha ao restaurar cache de certificados', error);
+      }
+
+      if (isAuthenticated) {
+        loadCertificates(true, true, true);
+      } else {
+        setIsLoading(false);
+      }
+    };
+
+    restoreCache();
   }, [isAuthenticated]);
 
-  const loadCertificates = async () => {
-    try {
-      setIsLoading(true);
-      const latestEnrollments = await refreshEnrollments(true);
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!isAuthenticated || !hasLoadedOnce.current) {
+        return;
+      }
+      // Atualiza em background quando voltar para a aba, sem travar a UI.
+      loadCertificates(false, false, true);
+    }, [isAuthenticated]),
+  );
 
-      const mapped = await mapAvailableCertificates(latestEnrollments);
-      setCertificates(mapped);
+  const loadCertificates = async (
+    forceRefresh = false,
+    showSpinner = true,
+    respectCacheTtl = true,
+  ) => {
+    try {
+      const now = Date.now();
+      const isCacheFresh =
+        respectCacheTtl &&
+        lastCacheSyncRef.current !== null &&
+        now - lastCacheSyncRef.current < CERTIFICATES_CACHE_TTL;
+
+      if (isCacheFresh && certificatesRef.current.length > 0 && !forceRefresh) {
+        // Cache fresco: mantém UI instantânea e dispara refresh silencioso em segundo plano.
+        setIsLoading(false);
+        setTimeout(() => {
+          loadCertificates(true, false, false).catch((err) =>
+            console.warn('Refresh silencioso de certificados falhou', err),
+          );
+        }, 0);
+        return certificatesRef.current;
+      }
+
+      if (showSpinner && certificatesRef.current.length === 0) {
+        setIsLoading(true);
+      }
+
+      const latestEnrollments = await refreshEnrollments(forceRefresh);
+      const eligible = latestEnrollments.filter(isEnrollmentEligibleForCertificate);
+
+      // Mostra imediatamente os certificados já conhecidos (cache) para reduzir a espera na tela.
+      const cachedCertificates = eligible
+        .filter((enrollment) => certificateCache[enrollment.id])
+        .map((enrollment) => createCertificateFromEnrollment(enrollment));
+      if (cachedCertificates.length > 0 || certificatesRef.current.length === 0) {
+        setCertificates(cachedCertificates);
+      } else {
+        // Mantém a lista atual visível enquanto valida em background.
+        setCertificates(certificatesRef.current);
+      }
+      if (showSpinner) {
+        setIsLoading(false);
+      }
+      hasLoadedOnce.current = true;
+      if (certificatesRef.current.length > 0) {
+        await AsyncStorage.setItem(
+          CERTIFICATES_CACHE_KEY,
+          JSON.stringify({ data: certificatesRef.current, timestamp: Date.now() }),
+        );
+        lastCacheSyncRef.current = Date.now();
+      }
+
+      // Verifica os demais em paralelo, atualizando assim que cada um estiver disponível.
+      const toCheck = eligible.filter((enrollment) => certificateCache[enrollment.id] !== true);
+
+      toCheck.forEach(async (enrollment) => {
+        try {
+          const available = await ApiService.verificarCertificado(enrollment.id);
+          setCertificateCache((prev) => ({ ...prev, [enrollment.id]: available }));
+          if (available) {
+            const certificate = createCertificateFromEnrollment(enrollment);
+            setCertificates((prev) => {
+              const exists = prev.some((item) => item.id === certificate.id);
+              return exists ? prev : [...prev, certificate];
+            });
+          }
+        } catch (error) {
+          console.warn('Certificado ainda não disponível para inscrição', enrollment.id, error);
+          setCertificateCache((prev) => ({ ...prev, [enrollment.id]: false }));
+        }
+      });
     } catch (error: any) {
       console.error('Erro ao carregar certificados:', error);
       Alert.alert(
         'Erro',
         error?.message || 'Não foi possível carregar seus certificados agora.',
       );
-    } finally {
       setIsLoading(false);
     }
   };
@@ -75,41 +191,17 @@ const CertificadosScreen: React.FC = () => {
     return hasCompletedAllLessons(enrollment);
   };
 
-  const mapAvailableCertificates = async (
-    enrollmentsList: Enrollment[],
-  ): Promise<Certificate[]> => {
+  const createCertificateFromEnrollment = (enrollment: Enrollment): Certificate => {
     const studentName = user?.nomeUsuario ?? 'Aluno';
-
-    const candidates = enrollmentsList.filter(isEnrollmentEligibleForCertificate);
-
-    const certificatesPromises = candidates.map(async (enrollment) => {
-      try {
-        const available = await ApiService.verificarCertificado(enrollment.id);
-        if (!available) {
-          return null;
-        }
-
-        return {
-          id: String(enrollment.id),
-          courseName: enrollment.curso.nomeCurso,
-          studentName,
-          issueDate:
-            enrollment.dataConclusao ??
-            enrollment.dataInscricao ??
-            new Date().toISOString(),
-          inscriptionId: enrollment.id,
-          status: enrollment.status,
-        } as Certificate;
-      } catch (error) {
-        console.warn('Certificado ainda não disponível para inscrição', enrollment.id, error);
-        return null;
-      }
-    });
-
-    const certificatesResult = await Promise.all(certificatesPromises);
-    return certificatesResult.filter(
-      (certificate): certificate is Certificate => Boolean(certificate),
-    );
+    return {
+      id: String(enrollment.id),
+      courseName: enrollment.curso.nomeCurso,
+      studentName,
+      issueDate:
+        enrollment.dataConclusao ?? enrollment.dataInscricao ?? new Date().toISOString(),
+      inscriptionId: enrollment.id,
+      status: enrollment.status,
+    };
   };
 
   const handleOpenCertificate = (certificate: Certificate) => {
