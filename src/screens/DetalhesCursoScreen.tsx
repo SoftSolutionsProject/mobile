@@ -27,6 +27,7 @@ import NotificationService from '../services/NotificationService';
 import { CourseDetails, Review, RootStackParamList } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useCourses } from '../contexts/CoursesContext';
+import { CourseCache } from '../services/CourseCache';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'DetalhesCurso'>;
@@ -46,6 +47,7 @@ const DetalhesCursoScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isEnrolling, setIsEnrolling] = useState<boolean>(false);
   const [quantityEnrolled, setQuantityEnrolled] = useState<number>(0);
+  const hasCacheShown = useRef(false);
   const hasLoadedOnce = useRef(false);
 
   const isEnrolled = useMemo(() => {
@@ -67,7 +69,19 @@ const DetalhesCursoScreen: React.FC = () => {
 
   const loadData = useCallback(async () => {
     try {
-      setIsLoading(true);
+      // Usa cache para renderizar instantaneamente ao abrir.
+      if (!hasCacheShown.current) {
+        const cached = CourseCache.get(Number(courseId));
+        if (cached?.course) {
+          setCourse((prev) => prev || cached.course);
+          hasCacheShown.current = true;
+        }
+      }
+
+      if (!hasCacheShown.current) {
+        setIsLoading(true);
+      }
+
       const [courseResponse, countResponse, reviewsResponse] = await Promise.all([
         ApiService.obterCurso(Number(courseId)),
         ApiService.obterQuantidadeInscritos(Number(courseId)),
@@ -77,6 +91,8 @@ const DetalhesCursoScreen: React.FC = () => {
       setCourse(courseResponse);
       setQuantityEnrolled(countResponse?.quantidadeInscritos ?? 0);
       setReviews(reviewsResponse);
+      CourseCache.set(Number(courseId), { course: courseResponse });
+      hasCacheShown.current = true;
     } catch (error: any) {
       console.error('Erro ao carregar curso:', error);
       Alert.alert(

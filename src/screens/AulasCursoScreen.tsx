@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,7 @@ import {
 } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useCourses } from '../contexts/CoursesContext';
+import { CourseCache } from '../services/CourseCache';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'AulasCurso'>;
@@ -62,6 +63,10 @@ const AulasCursoScreen: React.FC = () => {
   const [isCheckingCertificate, setIsCheckingCertificate] = useState(false);
   const [isDownloadingCertificate, setIsDownloadingCertificate] = useState(false);
   const [youtubeFallbackUrl, setYoutubeFallbackUrl] = useState<string | null>(null);
+  const [cachedModules, setCachedModules] = useState<Module[]>([]);
+  const [cachedCourse, setCachedCourse] = useState<CourseDetails | null>(null);
+  const hasLoadedOnce = useRef(false);
+  const [lastCourseId, setLastCourseId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -97,16 +102,40 @@ const AulasCursoScreen: React.FC = () => {
 
   const loadData = async () => {
     try {
-      setIsLoading(true);
+      const isSameCourse = lastCourseId === String(courseId);
+      const cached = CourseCache.get(Number(courseId));
+      const hasCache = cached || cachedCourse || cachedModules.length > 0;
+      const hasCurrentData = isSameCourse && (course || modules.length > 0);
+
+      // Sempre tenta usar cache imediatamente para evitar flicker.
+      if (cached?.course) {
+        setCourse((prev) => prev || cached.course);
+      }
+      if (cached?.modules?.length) {
+        setModules((prev) => (prev.length > 0 ? prev : cached.modules || []));
+      }
+      if (!cached && (cachedCourse || cachedModules.length > 0)) {
+        setCourse((prev) => prev || cachedCourse);
+        setModules((prev) => (prev.length > 0 ? prev : cachedModules));
+      }
+
+      const shouldShowSpinner = !hasCurrentData && !hasCache;
+      if (shouldShowSpinner) {
+        setIsLoading(true);
+      }
 
       const [courseResponse, modulesResponse, enrollmentsResponse] = await Promise.all([
         ApiService.obterCurso(Number(courseId)),
         ApiService.listarModulosEAulasDoCurso(Number(courseId)),
-        refreshEnrollments(true),
+        refreshEnrollments(false),
       ]);
 
       setCourse(courseResponse);
+      setCachedCourse(courseResponse);
       setModules(modulesResponse);
+      setCachedModules(modulesResponse);
+      CourseCache.set(Number(courseId), { course: courseResponse, modules: modulesResponse });
+      setLastCourseId(String(courseId));
 
       const activeEnrollment =
         enrollmentsResponse.find(
@@ -132,11 +161,25 @@ const AulasCursoScreen: React.FC = () => {
       );
       setCompletedLessons(completed);
 
-      const progressResponse = await ApiService.obterProgresso(activeEnrollment.id);
-      setProgressInfo(progressResponse);
+      const needsProgress =
+        !progressInfo || !isSameCourse || progressInfo?.progresso === undefined;
+      if (needsProgress) {
+        const progressResponse = await ApiService.obterProgresso(activeEnrollment.id);
+        setProgressInfo(progressResponse);
+      } else {
+        ApiService.obterProgresso(activeEnrollment.id)
+          .then((progressResponse) => setProgressInfo(progressResponse))
+          .catch((progressError) => {
+            console.warn('Falha ao obter progresso do curso', progressError);
+          });
+      }
 
       const firstIncompleteLesson = findFirstIncompleteLesson(modulesResponse, completed);
       setCurrentLessonId(firstIncompleteLesson ?? modulesResponse[0]?.aulas[0]?.id ?? null);
+      hasLoadedOnce.current = true;
+      setIsLoading(false);
+
+      CourseCache.set(Number(courseId), { course: courseResponse, modules: modulesResponse });
     } catch (error: any) {
       console.error('Erro ao carregar aulas do curso:', error);
       Alert.alert(
@@ -144,7 +187,6 @@ const AulasCursoScreen: React.FC = () => {
         error?.message || 'Não foi possível carregar as aulas deste curso.',
         [{ text: 'OK', onPress: () => navigation.goBack() }],
       );
-    } finally {
       setIsLoading(false);
     }
   };
