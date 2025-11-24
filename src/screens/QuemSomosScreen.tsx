@@ -14,6 +14,7 @@ import { RootStackParamList } from '../types';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { Ionicons } from '@expo/vector-icons';
+import { CourseCache } from '../services/CourseCache';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -25,10 +26,10 @@ const QuemSomosScreen: React.FC = () => {
   };
 
   const socialLinks = [
-    { name: 'facebook', url: 'https://facebook.com' },
-    { name: 'instagram', url: 'https://instagram.com' },
-    { name: 'linkedin', url: 'https://linkedin.com' },
-    { name: 'youtube', url: 'https://youtube.com' },
+    { name: 'instagram', url: 'https://www.instagram.com/softsolutionsproject/' },
+    { name: 'youtube', url: 'https://www.youtube.com/@SoftSolutionsFatec' },
+    { name: 'linkedin', url: 'https://www.linkedin.com/in/soft-solutions/' },
+    { name: 'facebook', url: 'https://www.facebook.com/softsolutions' },
   ];
 
   return (
@@ -38,89 +39,43 @@ const QuemSomosScreen: React.FC = () => {
         <View style={styles.content}>
           {/* Hero Section */}
           <View style={styles.heroSection}>
-            <Text style={styles.heroTitle}>Sobre a Soft Solutions</Text>
+            <Text style={styles.heroTitle}>Nossa História</Text>
             <Text style={styles.heroSubtitle}>
-              Transformando vidas através da educação em tecnologia
+              A SoftSolutions nasceu há mais de uma década, quando um grupo de amigos apaixonados
+              por computação decidiu criar soluções inovadoras para os desafios do mercado,
+              começando como uma empresa de consultoria em design e programação. Junte-se a
+              milhares de alunos que já transformaram suas carreiras conosco.
             </Text>
           </View>
 
           {/* Mission Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Nossa Missão</Text>
+            <Text style={styles.sectionTitle}>Missão</Text>
             <Text style={styles.sectionText}>
-              Democratizar o acesso à educação de qualidade em tecnologia, 
-              preparando profissionais para os desafios do mercado de trabalho 
-              digital e contribuindo para o desenvolvimento tecnológico do país.
+              Ajudar os alunos com o desenvolvimento, implementação, manutenções e atualizações de
+              softwares, fornecendo uma experiência agradável, facilitada e acessível.
             </Text>
           </View>
 
-          {/* Vision Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Nossa Visão</Text>
+            <Text style={styles.sectionTitle}>Visão</Text>
             <Text style={styles.sectionText}>
-              Ser a principal referência em educação tecnológica no Brasil, 
-              reconhecida pela excelência no ensino e pelo impacto positivo 
-              na carreira de nossos alunos.
+              Fazer com que os alunos tenham facilidade em desenvolver seus próprios sistemas para
+              fazer a diferença no mercado de trabalho.
             </Text>
           </View>
 
           {/* Values Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Nossos Valores</Text>
-            <View style={styles.valuesList}>
-              <View style={styles.valueItem}>
-                <Ionicons name="checkmark-circle" size={20} color="#2ecc71" />
-                <Text style={styles.valueText}>Excelência no ensino</Text>
-              </View>
-              <View style={styles.valueItem}>
-                <Ionicons name="checkmark-circle" size={20} color="#2ecc71" />
-                <Text style={styles.valueText}>Inovação constante</Text>
-              </View>
-              <View style={styles.valueItem}>
-                <Ionicons name="checkmark-circle" size={20} color="#2ecc71" />
-                <Text style={styles.valueText}>Acessibilidade</Text>
-              </View>
-              <View style={styles.valueItem}>
-                <Ionicons name="checkmark-circle" size={20} color="#2ecc71" />
-                <Text style={styles.valueText}>Compromisso com resultados</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Stats Section */}
-          <View style={styles.statsSection}>
-            <Text style={styles.sectionTitle}>Números que nos Orgulham</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>+1000</Text>
-                <Text style={styles.statLabel}>Alunos Formados</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>50+</Text>
-                <Text style={styles.statLabel}>Cursos Disponíveis</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>95%</Text>
-                <Text style={styles.statLabel}>Taxa de Satisfação</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>5</Text>
-                <Text style={styles.statLabel}>Anos de Experiência</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Team Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Nossa Equipe</Text>
+            <Text style={styles.sectionTitle}>Valores</Text>
             <Text style={styles.sectionText}>
-              Contamos com uma equipe de profissionais altamente qualificados, 
-              com vasta experiência no mercado de tecnologia e paixão pelo ensino. 
-              Nossos instrutores são especialistas em suas áreas e estão sempre 
-              atualizados com as mais recentes tendências tecnológicas.
+              Inovação, organização, simplicidade, sustentabilidade, acessibilidade, qualidade,
+              foco no usuário, ética, transparência, responsabilidade, com intenção de deixar uma
+              boa e duradoura impressão em nossos clientes.
             </Text>
           </View>
 
+          {/* Stats Section */}
           {/* Social Media Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Siga-nos nas Redes Sociais</Text>
@@ -134,7 +89,7 @@ const QuemSomosScreen: React.FC = () => {
                   style={styles.socialButton}
                   onPress={() => openLink(social.url)}
                 >
-                  <Ionicons name={social.name as any} size={24} color="#125887" />
+                  <Ionicons name={`logo-${social.name}` as any} size={24} color="#125887" />
                 </TouchableOpacity>
               ))}
             </View>
@@ -142,14 +97,14 @@ const QuemSomosScreen: React.FC = () => {
 
           {/* CTA Section */}
           <View style={styles.ctaSection}>
-            <Text style={styles.ctaTitle}>Pronto para começar sua jornada?</Text>
-            <Text style={styles.ctaSubtitle}>
-              Junte-se a milhares de alunos que já transformaram suas carreiras conosco.
-            </Text>
-            <TouchableOpacity
-              style={styles.ctaButton}
-              onPress={() => navigation.navigate('CursosLista')}
-            >
+          <Text style={styles.ctaTitle}>Pronto para começar sua jornada?</Text>
+          <Text style={styles.ctaSubtitle}>
+            Junte-se a milhares de alunos que já transformaram suas carreiras conosco.
+          </Text>
+          <TouchableOpacity
+            style={styles.ctaButton}
+            onPress={() => navigation.navigate('CursosLista')}
+          >
               <Text style={styles.ctaButtonText}>Ver Cursos</Text>
             </TouchableOpacity>
           </View>
@@ -182,13 +137,13 @@ const styles = StyleSheet.create({
   heroTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#e6eefb',
     textAlign: 'center',
     marginBottom: 10,
   },
   heroSubtitle: {
     fontSize: 16,
-    color: '#b0c4de',
+    color: '#111',
     textAlign: 'center',
     lineHeight: 22,
   },
@@ -282,7 +237,7 @@ const styles = StyleSheet.create({
   },
   ctaSubtitle: {
     fontSize: 16,
-    color: '#b0c4de',
+    color: '#111',
     textAlign: 'center',
     marginBottom: 20,
     lineHeight: 22,

@@ -140,32 +140,7 @@ const ContatoScreen: React.FC = () => {
     Linking.openURL(url);
   };
 
-  const contactInfo = [
-    {
-      icon: 'mail',
-      title: 'Email',
-      value: 'contato@softsolutions.com',
-      action: () => openLink('mailto:contato@softsolutions.com'),
-    },
-    {
-      icon: 'call',
-      title: 'Telefone',
-      value: '(11) 99999-9999',
-      action: () => openLink('tel:+5511999999999'),
-    },
-    {
-      icon: 'location',
-      title: 'Endereço',
-      value: 'São Paulo, SP - Brasil',
-      action: null,
-    },
-    {
-      icon: 'time',
-      title: 'Horário de Atendimento',
-      value: 'Seg-Sex: 8h às 18h',
-      action: null,
-    },
-  ];
+  const contactInfo: any[] = [];
 
   return (
     <View style={styles.container}>
@@ -262,25 +237,12 @@ const ContatoScreen: React.FC = () => {
 
             {/* Contact Info */}
             <View style={styles.contactInfoSection}>
-              <Text style={styles.sectionTitle}>Informações de Contato</Text>
-              <View style={styles.contactInfoGrid}>
-                {contactInfo.map((info, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={styles.contactInfoItem}
-                    onPress={info.action || undefined}
-                    disabled={!info.action}
-                  >
-                    <View style={styles.contactInfoIcon}>
-                      <Ionicons name={info.icon as any} size={24} color="#4a9eff" />
-                    </View>
-                    <View style={styles.contactInfoContent}>
-                      <Text style={styles.contactInfoTitle}>{info.title}</Text>
-                      <Text style={styles.contactInfoValue}>{info.value}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
+            <Text style={styles.sectionTitle}>Informações de Contato</Text>
+            <View style={styles.contactInfoGrid}>
+              <Text style={styles.contactInfoValue}>
+                Preencha o formulário ao lado que retornaremos o mais rápido possível.
+              </Text>
+            </View>
             </View>
 
             {/* FAQ Section */}
