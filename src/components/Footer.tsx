@@ -10,6 +10,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -17,6 +18,7 @@ const Footer: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const navigateToScreen = (screenName: keyof RootStackParamList, params?: any) => {
     navigation.navigate(screenName as any, params);
@@ -27,7 +29,7 @@ const Footer: React.FC = () => {
   };
 
   return (
-    <View style={styles.footer}>
+    <View style={[styles.footer, { paddingBottom: 12 + insets.bottom }]}>
       <View style={styles.footerContent}>
         <TouchableOpacity 
           style={[styles.footerItem, isActive('Home') && styles.activeFooterItem]}
@@ -106,7 +108,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e1e1e',
     borderTopWidth: 1,
     borderTopColor: '#404040',
-    paddingVertical: 12,
+    paddingTop: 12,
     paddingHorizontal: 20,
     elevation: 8,
     shadowColor: '#000',
