@@ -27,6 +27,9 @@ import { useCourses } from '../contexts/CoursesContext';
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'Profile'>;
 
+const INPUT_TEXT_COLOR = '#111827';
+const PLACEHOLDER_COLOR = '#6b7280';
+
 type EditProfileData = {
   nomeUsuario: string;
   email: string;
@@ -618,6 +621,8 @@ const ProfileScreen: React.FC = () => {
                       setEditData((prev) => ({ ...prev, nomeUsuario: text }))
                     }
                     placeholder="Digite seu nome completo"
+                    placeholderTextColor={PLACEHOLDER_COLOR}
+                    selectionColor="#4a9eff"
                   />
                 </View>
                 
@@ -630,8 +635,10 @@ const ProfileScreen: React.FC = () => {
                       setEditData((prev) => ({ ...prev, email: text }))
                     }
                     placeholder="Digite seu email"
+                    placeholderTextColor={PLACEHOLDER_COLOR}
                     keyboardType="email-address"
                     autoCapitalize="none"
+                    selectionColor="#4a9eff"
                   />
                 </View>
                 
@@ -653,8 +660,10 @@ const ProfileScreen: React.FC = () => {
                       setEditData((prev) => ({ ...prev, telefone: formatPhone(text) }))
                     }
                     placeholder="(00) 00000-0000"
+                    placeholderTextColor={PLACEHOLDER_COLOR}
                     keyboardType="phone-pad"
                     maxLength={15}
+                    selectionColor="#4a9eff"
                   />
                 </View>
 
@@ -665,6 +674,8 @@ const ProfileScreen: React.FC = () => {
                     value={editData.endereco.rua}
                     onChangeText={(text) => handleAddressChange('rua', text)}
                     placeholder="Rua"
+                    placeholderTextColor={PLACEHOLDER_COLOR}
+                    selectionColor="#4a9eff"
                   />
                   <View style={styles.addressRow}>
                     <TextInput
@@ -672,12 +683,16 @@ const ProfileScreen: React.FC = () => {
                       value={editData.endereco.numero}
                       onChangeText={(text) => handleAddressChange('numero', text)}
                       placeholder="Número"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
+                      selectionColor="#4a9eff"
                     />
                     <TextInput
                       style={[styles.input, styles.addressHalf]}
                       value={editData.endereco.bairro}
                       onChangeText={(text) => handleAddressChange('bairro', text)}
                       placeholder="Bairro"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
+                      selectionColor="#4a9eff"
                     />
                   </View>
                   <View style={styles.addressRow}>
@@ -686,12 +701,16 @@ const ProfileScreen: React.FC = () => {
                       value={editData.endereco.cidade}
                       onChangeText={(text) => handleAddressChange('cidade', text)}
                       placeholder="Cidade"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
+                      selectionColor="#4a9eff"
                     />
                     <TextInput
                       style={[styles.input, styles.addressHalf]}
                       value={editData.endereco.estado}
                       onChangeText={(text) => handleAddressChange('estado', text)}
                       placeholder="Estado"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
+                      selectionColor="#4a9eff"
                     />
                   </View>
                   <TextInput
@@ -699,6 +718,8 @@ const ProfileScreen: React.FC = () => {
                     value={editData.endereco.pais}
                     onChangeText={(text) => handleAddressChange('pais', text)}
                     placeholder="País"
+                    placeholderTextColor={PLACEHOLDER_COLOR}
+                    selectionColor="#4a9eff"
                   />
                 </View>
                 
@@ -1200,6 +1221,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     backgroundColor: '#f9f9f9',
+    color: INPUT_TEXT_COLOR,
   },
   readOnlyInput: {
     backgroundColor: '#f1f1f1',

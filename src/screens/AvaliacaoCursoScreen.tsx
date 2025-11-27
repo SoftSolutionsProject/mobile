@@ -30,6 +30,9 @@ import { useAuth } from '../contexts/AuthContext';
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 type RoutePropType = RouteProp<RootStackParamList, 'AvaliacaoCurso'>;
 
+const INPUT_TEXT_COLOR = '#111827';
+const PLACEHOLDER_COLOR = '#6b7280';
+
 const AvaliacaoCursoScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RoutePropType>();
@@ -219,11 +222,13 @@ const AvaliacaoCursoScreen: React.FC = () => {
                   value={comment}
                   onChangeText={setComment}
                   placeholder="Conte sua experiência com este curso..."
+                  placeholderTextColor={PLACEHOLDER_COLOR}
                   multiline
                   numberOfLines={6}
                   textAlignVertical="top"
                   scrollEnabled
                   returnKeyType="done"
+                  selectionColor="#4a9eff"
                 />
                 <Text style={styles.commentHint}>
                   Mínimo 10 caracteres
@@ -341,6 +346,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#f9f9f9',
     minHeight: 120,
+    color: INPUT_TEXT_COLOR,
   },
   commentHint: {
     fontSize: 12,

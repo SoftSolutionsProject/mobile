@@ -23,6 +23,9 @@ import NotificationService from '../services/NotificationService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
+const INPUT_TEXT_COLOR = '#111827';
+const PLACEHOLDER_COLOR = '#6b7280';
+
 const ContatoScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const [formData, setFormData] = useState({
@@ -163,7 +166,9 @@ const ContatoScreen: React.FC = () => {
                       value={formData.nome}
                       onChangeText={(value) => handleInputChange('nome', value)}
                       placeholder="Seu nome completo"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
                       autoCapitalize="words"
+                      selectionColor="#4a9eff"
                     />
                   </View>
                   <View style={styles.inputGroup}>
@@ -173,9 +178,11 @@ const ContatoScreen: React.FC = () => {
                       value={formData.email}
                       onChangeText={(value) => handleInputChange('email', value)}
                       placeholder="seu@email.com"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
                       keyboardType="email-address"
                       autoCapitalize="none"
                       autoCorrect={false}
+                      selectionColor="#4a9eff"
                     />
                   </View>
                 </View>
@@ -187,8 +194,10 @@ const ContatoScreen: React.FC = () => {
                     value={formData.telefone}
                     onChangeText={(value) => handleInputChange('telefone', value)}
                     placeholder="(11) 99999-9999"
+                    placeholderTextColor={PLACEHOLDER_COLOR}
                     keyboardType="phone-pad"
                     maxLength={15}
+                    selectionColor="#4a9eff"
                   />
                 </View>
 
@@ -199,7 +208,9 @@ const ContatoScreen: React.FC = () => {
                     value={formData.assunto}
                     onChangeText={(value) => handleInputChange('assunto', value)}
                     placeholder="Qual o assunto da sua mensagem?"
+                    placeholderTextColor={PLACEHOLDER_COLOR}
                     autoCapitalize="sentences"
+                    selectionColor="#4a9eff"
                   />
                 </View>
 
@@ -210,10 +221,12 @@ const ContatoScreen: React.FC = () => {
                     value={formData.mensagem}
                     onChangeText={(value) => handleInputChange('mensagem', value)}
                     placeholder="Descreva sua dúvida ou sugestão..."
+                    placeholderTextColor={PLACEHOLDER_COLOR}
                     multiline
                     numberOfLines={4}
                     textAlignVertical="top"
                     autoCapitalize="sentences"
+                    selectionColor="#4a9eff"
                   />
                 </View>
 
@@ -373,6 +386,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     backgroundColor: '#f9f9f9',
+    color: INPUT_TEXT_COLOR,
   },
   textArea: {
     height: 100,

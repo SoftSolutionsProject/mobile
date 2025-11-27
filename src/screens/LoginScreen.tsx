@@ -23,6 +23,9 @@ import NotificationService from '../services/NotificationService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
+const INPUT_TEXT_COLOR = '#111827';
+const PLACEHOLDER_COLOR = '#6b7280';
+
 const LoginScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const { login, isLoading } = useAuth();
@@ -109,9 +112,11 @@ const LoginScreen: React.FC = () => {
                       value={email}
                       onChangeText={setEmail}
                       placeholder="Digite seu email"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
                       keyboardType="email-address"
                       autoCapitalize="none"
                       autoCorrect={false}
+                      selectionColor="#4a9eff"
                     />
                   </View>
 
@@ -123,9 +128,11 @@ const LoginScreen: React.FC = () => {
                         value={senha}
                         onChangeText={setSenha}
                         placeholder="Digite sua senha"
+                        placeholderTextColor={PLACEHOLDER_COLOR}
                         secureTextEntry={!showPassword}
                         autoCapitalize="none"
                         autoCorrect={false}
+                        selectionColor="#4a9eff"
                       />
                       <TouchableOpacity
                         style={styles.eyeButton}
@@ -249,6 +256,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     backgroundColor: '#f9f9f9',
+    color: INPUT_TEXT_COLOR,
   },
   passwordContainer: {
     position: 'relative',
@@ -262,6 +270,7 @@ const styles = StyleSheet.create({
     paddingRight: 50,
     fontSize: 16,
     backgroundColor: '#f9f9f9',
+    color: INPUT_TEXT_COLOR,
   },
   eyeButton: {
     position: 'absolute',

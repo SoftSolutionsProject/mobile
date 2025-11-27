@@ -20,6 +20,9 @@ import ApiService from '../services/ApiService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
+const INPUT_TEXT_COLOR = '#111827';
+const PLACEHOLDER_COLOR = '#6b7280';
+
 const RecuperarSenhaScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const [email, setEmail] = useState('');
@@ -87,9 +90,11 @@ const RecuperarSenhaScreen: React.FC = () => {
                       value={email}
                       onChangeText={setEmail}
                       placeholder="Digite seu email"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
                       keyboardType="email-address"
                       autoCapitalize="none"
                       autoCorrect={false}
+                      selectionColor="#4a9eff"
                     />
                   </View>
 
@@ -193,6 +198,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     backgroundColor: '#f9f9f9',
+    color: INPUT_TEXT_COLOR,
   },
   errorText: {
     color: '#e74c3c',

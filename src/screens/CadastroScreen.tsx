@@ -29,6 +29,9 @@ import NotificationService from '../services/NotificationService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
+const INPUT_TEXT_COLOR = '#111827';
+const PLACEHOLDER_COLOR = '#6b7280';
+
 const CadastroScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const [formData, setFormData] = useState({
@@ -185,7 +188,9 @@ const CadastroScreen: React.FC = () => {
                       value={formData.nomeUsuario}
                       onChangeText={(value) => handleInputChange('nomeUsuario', value)}
                       placeholder="Nome"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
                       autoCapitalize="words"
+                      selectionColor="#4a9eff"
                     />
                   </View>
 
@@ -195,9 +200,11 @@ const CadastroScreen: React.FC = () => {
                       value={formData.email}
                       onChangeText={(value) => handleInputChange('email', value)}
                       placeholder="Email"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
                       keyboardType="email-address"
                       autoCapitalize="none"
                       autoCorrect={false}
+                      selectionColor="#4a9eff"
                     />
                   </View>
 
@@ -207,9 +214,11 @@ const CadastroScreen: React.FC = () => {
                       value={formData.senha}
                       onChangeText={handlePasswordChange}
                       placeholder="Senha"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
                       secureTextEntry
                       autoCapitalize="none"
                       autoCorrect={false}
+                      selectionColor="#4a9eff"
                     />
                     {passwordErrors.length > 0 && (
                       <View style={styles.passwordErrorsContainer}>
@@ -228,8 +237,10 @@ const CadastroScreen: React.FC = () => {
                       value={formData.cpfUsuario}
                       onChangeText={(value) => handleInputChange('cpfUsuario', value)}
                       placeholder="CPF (000.000.000-00)"
+                      placeholderTextColor={PLACEHOLDER_COLOR}
                       keyboardType="numeric"
                       maxLength={14}
+                      selectionColor="#4a9eff"
                     />
                   </View>
 
@@ -320,6 +331,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     backgroundColor: '#f9f9f9',
+    color: INPUT_TEXT_COLOR,
   },
   errorText: {
     color: '#e74c3c',
